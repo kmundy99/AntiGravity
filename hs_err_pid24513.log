@@ -1,0 +1,317 @@
+00:00 0 
+7fcc33f70000-7fcc340f0000 rw-p 00000000 00:00 0 
+7fcc340f0000-7fcc341b0000 rw-p 00000000 00:00 0 
+7fcc341b0000-7fcc34320000 rw-p 00000000 00:00 0 
+7fcc34320000-7fcc34380000 ---p 00000000 00:00 0 
+7fcc34380000-7fcc343f0000 rw-p 00000000 00:00 0 
+7fcc343f0000-7fcc37000000 ---p 00000000 00:00 0 
+7fcc37000000-7fcc37cf5000 rw-p 00001000 00:2d 59942                      /usr/lib/jvm/zulu21-ca-amd64/lib/server/classes.jsa
+7fcc37cf5000-7fcc38000000 ---p 00000000 00:00 0 
+7fcc38000000-7fcc38030000 rw-p 00000000 00:00 0 
+7fcc38030000-7fcc38070000 rw-p 00000000 00:00 0 
+7fcc38070000-7fcc380f0000 rw-p 00000000 00:00 0 
+7fcc380f0000-7fcc38130000 rw-p 00000000 00:00 0 
+7fcc38130000-7fcc381b0000 rw-p 00000000 00:00 0 
+7fcc381b0000-7fcc381d0000 rw-p 00000000 00:00 0 
+7fcc381d0000-7fcc38220000 rw-p 00000000 00:00 0 
+7fcc38220000-7fcc38240000 ---p 00000000 00:00 0 
+7fcc38240000-7fcc38280000 rw-p 00000000 00:00 0 
+7fcc38280000-7fcc78000000 ---p 00000000 00:00 0 
+7fcc78000000-7fcc78021000 rw-p 00000000 00:00 0 
+7fcc78021000-7fcc7c000000 ---p 00000000 00:00 0 
+7fcc7c000000-7fcc7c18e000 rw-p 00000000 00:00 0 
+7fcc7c18e000-7fcc80000000 ---p 00000000 00:00 0 
+7fcc80000000-7fcc80021000 rw-p 00000000 00:00 0 
+7fcc80021000-7fcc84000000 ---p 00000000 00:00 0 
+7fcc84741000-7fcc84a28000 rw-p 00000000 00:00 0 
+7fcc84a28000-7fcc84a29000 ---p 00000000 00:00 0 
+7fcc84a29000-7fcc84b29000 rw-p 00000000 00:00 0 
+7fcc84b29000-7fcc84b2a000 ---p 00000000 00:00 0 
+7fcc84b2a000-7fcc84c2a000 rw-p 00000000 00:00 0 
+7fcc84c2a000-7fcc84c2b000 ---p 00000000 00:00 0 
+7fcc84c2b000-7fcc84d2b000 rw-p 00000000 00:00 0 
+7fcc84d2b000-7fcc84d2c000 ---p 00000000 00:00 0 
+7fcc84d2c000-7fcc84e2c000 rw-p 00000000 00:00 0 
+7fcc84e2c000-7fcc84e2d000 ---p 00000000 00:00 0 
+7fcc84e2d000-7fcc84f2d000 rw-p 00000000 00:00 0 
+7fcc84f2d000-7fcc84f31000 ---p 00000000 00:00 0 
+7fcc84f31000-7fcc8502d000 rw-p 00000000 00:00 0 
+7fcc8502d000-7fcc85031000 ---p 00000000 00:00 0 
+7fcc85031000-7fcc8512d000 rw-p 00000000 00:00 0 
+7fcc8512d000-7fcc85131000 ---p 00000000 00:00 0 
+7fcc85131000-7fcc8522d000 rw-p 00000000 00:00 0 
+7fcc8522d000-7fcc85231000 ---p 00000000 00:00 0 
+7fcc85231000-7fcc8532d000 rw-p 00000000 00:00 0 
+7fcc8532d000-7fcc85331000 ---p 00000000 00:00 0 
+7fcc85331000-7fcc8542d000 rw-p 00000000 00:00 0 
+7fcc8542d000-7fcc85431000 ---p 00000000 00:00 0 
+7fcc85431000-7fcc8552d000 rw-p 00000000 00:00 0 
+7fcc8552d000-7fcc85531000 ---p 00000000 00:00 0 
+7fcc85531000-7fcc8562d000 rw-p 00000000 00:00 0 
+7fcc8562d000-7fcc85631000 ---p 00000000 00:00 0 
+7fcc85631000-7fcc8572d000 rw-p 00000000 00:00 0 
+7fcc8572d000-7fcc85731000 ---p 00000000 00:00 0 
+7fcc85731000-7fcc8582d000 rw-p 00000000 00:00 0 
+7fcc8582d000-7fcc85831000 ---p 00000000 00:00 0 
+7fcc85831000-7fcc8592d000 rw-p 00000000 00:00 0 
+7fcc8592d000-7fcc8592e000 ---p 00000000 00:00 0 
+7fcc8592e000-7fcc85a2e000 rw-p 00000000 00:00 0 
+7fcc85a2e000-7fcc85a2f000 ---p 00000000 00:00 0 
+7fcc85a2f000-7fcc85b2f000 rw-p 00000000 00:00 0 
+7fcc85b2f000-7fcc85b30000 ---p 00000000 00:00 0 
+7fcc85b30000-7fcc85c30000 rw-p 00000000 00:00 0 
+7fcc85c30000-7fcc85c34000 ---p 00000000 00:00 0 
+7fcc85c34000-7fcc85d30000 rw-p 00000000 00:00 0 
+7fcc85d30000-7fcc85d34000 ---p 00000000 00:00 0 
+7fcc85d34000-7fcc85e30000 rw-p 00000000 00:00 0 
+7fcc85e30000-7fcc85efe000 r-xp 00000000 00:2d 59978                      /usr/lib/jvm/zulu21-ca-amd64/lib/libjsvml.so
+7fcc85efe000-7fcc85eff000 r--p 000cd000 00:2d 59978                      /usr/lib/jvm/zulu21-ca-amd64/lib/libjsvml.so
+7fcc85eff000-7fcc85f00000 rw-p 000ce000 00:2d 59978                      /usr/lib/jvm/zulu21-ca-amd64/lib/libjsvml.so
+7fcc85f00000-7fcc85f04000 ---p 00000000 00:00 0 
+7fcc85f04000-7fcc88000000 rw-p 00000000 00:00 0 
+7fcc88000000-7fcc88021000 rw-p 00000000 00:00 0 
+7fcc88021000-7fcc8c000000 ---p 00000000 00:00 0 
+7fcc8c000000-7fcc8c021000 rw-p 00000000 00:00 0 
+7fcc8c021000-7fcc90000000 ---p 00000000 00:00 0 
+7fcc90000000-7fcc90021000 rw-p 00000000 00:00 0 
+7fcc90021000-7fcc94000000 ---p 00000000 00:00 0 
+7fcc94000000-7fcc94004000 ---p 00000000 00:00 0 
+7fcc94004000-7fcc94100000 rw-p 00000000 00:00 0 
+7fcc94100000-7fcc94104000 ---p 00000000 00:00 0 
+7fcc94104000-7fcc94200000 rw-p 00000000 00:00 0 
+7fcc94200000-7fcc944e9000 r--p 00000000 00:2d 173937                     /usr/lib/locale/locale-archive
+7fcc94500000-7fcc94504000 ---p 00000000 00:00 0 
+7fcc94504000-7fcc94600000 rw-p 00000000 00:00 0 
+7fcc94600000-7fcc94e50000 rwxp 00000000 00:00 0 
+7fcc94e50000-7fcc9bb37000 ---p 00000000 00:00 0 
+7fcc9bb37000-7fcc9bda7000 rwxp 00000000 00:00 0 
+7fcc9bda7000-7fcc9c0c9000 ---p 00000000 00:00 0 
+7fcc9c0c9000-7fcc9c339000 rwxp 00000000 00:00 0 
+7fcc9c339000-7fcca3600000 ---p 00000000 00:00 0 
+7fcca3600000-7fccabe83000 r--s 00000000 00:2d 59949                      /usr/lib/jvm/zulu21-ca-amd64/lib/modules
+7fccabed8000-7fccabedf000 r--s 00000000 00:2d 132960                     /usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache
+7fccabedf000-7fccabf00000 rw-p 00000000 00:00 0 
+7fccabf00000-7fccabf04000 ---p 00000000 00:00 0 
+7fccabf04000-7fccac000000 rw-p 00000000 00:00 0 
+7fccac000000-7fccac8a6000 rw-p 00000000 00:00 0 
+7fccac8a6000-7fccb0000000 ---p 00000000 00:00 0 
+7fccb0005000-7fccb0007000 r-xp 00000000 00:2d 59944                      /usr/lib/jvm/zulu21-ca-amd64/lib/libextnet.so
+7fccb0007000-7fccb0008000 r--p 00001000 00:2d 59944                      /usr/lib/jvm/zulu21-ca-amd64/lib/libextnet.so
+7fccb0008000-7fccb0009000 rw-p 00002000 00:2d 59944                      /usr/lib/jvm/zulu21-ca-amd64/lib/libextnet.so
+7fccb0009000-7fccb0010000 r-xp 00000000 00:2d 59932                      /usr/lib/jvm/zulu21-ca-amd64/lib/libzip.so
+7fccb0010000-7fccb0011000 ---p 00007000 00:2d 59932                      /usr/lib/jvm/zulu21-ca-amd64/lib/libzip.so
+7fccb0011000-7fccb0012000 r--p 00007000 00:2d 59932                      /usr/lib/jvm/zulu21-ca-amd64/lib/libzip.so
+7fccb0012000-7fccb0013000 rw-p 00008000 00:2d 59932                      /usr/lib/jvm/zulu21-ca-amd64/lib/libzip.so
+7fccb0013000-7fccb0017000 ---p 00000000 00:00 0 
+7fccb0017000-7fccb0113000 rw-p 00000000 00:00 0 
+7fccb0113000-7fccb0117000 ---p 00000000 00:00 0 
+7fccb0117000-7fccb0213000 rw-p 00000000 00:00 0 
+7fccb0213000-7fccb0214000 ---p 00000000 00:00 0 
+7fccb0214000-7fccb0314000 rw-p 00000000 00:00 0 
+7fccb0314000-7fccb0315000 ---p 00000000 00:00 0 
+7fccb0315000-7fccb0532000 rw-p 00000000 00:00 0 
+7fccb0532000-7fccb0533000 ---p 00000000 00:00 0 
+7fccb0533000-7fccb0633000 rw-p 00000000 00:00 0 
+7fccb0633000-7fccb0634000 ---p 00000000 00:00 0 
+7fccb0634000-7fccb0f3c000 rw-p 00000000 00:00 0 
+7fccb0f3c000-7fccb0f3d000 ---p 00000000 00:00 0 
+7fccb0f3d000-7fccb103d000 rw-p 00000000 00:00 0 
+7fccb103d000-7fccb103e000 ---p 00000000 00:00 0 
+7fccb103e000-7fccb113e000 rw-p 00000000 00:00 0 
+7fccb113e000-7fccb113f000 ---p 00000000 00:00 0 
+7fccb113f000-7fccb13b4000 rw-p 00000000 00:00 0 
+7fccb13b4000-7fccb143c000 ---p 00000000 00:00 0 
+7fccb143c000-7fccb1440000 rw-p 00000000 00:00 0 
+7fccb1440000-7fccb2bd8000 ---p 00000000 00:00 0 
+7fccb2bd8000-7fccb2bec000 rw-p 00000000 00:00 0 
+7fccb2bec000-7fccb2c12000 rw-p 00000000 00:00 0 
+7fccb2c12000-7fccb2c22000 ---p 00000000 00:00 0 
+7fccb2c22000-7fccb2c23000 rw-p 00000000 00:00 0 
+7fccb2c23000-7fccb2f16000 ---p 00000000 00:00 0 
+7fccb2f16000-7fccb2f3b000 rw-p 00000000 00:00 0 
+7fccb2f3b000-7fccb2f4b000 ---p 00000000 00:00 0 
+7fccb2f4b000-7fccb2f4c000 rw-p 00000000 00:00 0 
+7fccb2f4c000-7fccb323f000 ---p 00000000 00:00 0 
+7fccb323f000-7fccb3a4f000 rw-p 00000000 00:00 0 
+7fccb3a4f000-7fccb3b35000 ---p 00000000 00:00 0 
+7fccb3b35000-7fccb3b46000 rw-p 00000000 00:00 0 
+7fccb3b46000-7fccb3c20000 ---p 00000000 00:00 0 
+7fccb3c20000-7fccb3c24000 ---p 00000000 00:00 0 
+7fccb3c24000-7fccb3d20000 rw-p 00000000 00:00 0 
+7fccb3d20000-7fccb3d30000 r--p 00000000 00:2d 132698                     /usr/lib/x86_64-linux-gnu/libm.so.6
+7fccb3d30000-7fccb3da4000 r-xp 00010000 00:2d 132698                     /usr/lib/x86_64-linux-gnu/libm.so.6
+7fccb3da4000-7fccb3dfe000 r--p 00084000 00:2d 132698                     /usr/lib/x86_64-linux-gnu/libm.so.6
+7fccb3dfe000-7fccb3dff000 r--p 000dd000 00:2d 132698                     /usr/lib/x86_64-linux-gnu/libm.so.6
+7fccb3dff000-7fccb3e00000 rw-p 000de000 00:a000-7fccb52ee000 r--p 01419000  /usr/lib/jvm/zulu21-ca-amd64/li 59943                      /usrver/libjvm.so
+7fccb531e000-7fccbfccb5386000-7fccb5392000 r-xp 0000 00:2d 59963                  b53a9000 r--p 00013000 00:2d 599p 00014000 00:2d 59963          0:00 0 
+7fccb53af000-7fccb53b600  /usr/lib/jvm/zulu21-ca-amd64/lib/libjava.so
+7fccb53d6000-7fccb1                      /usr/lib/ccb53da000-7fccb53f5000 r-xp 0000-7fccb53f6000 ---p 0001b000 00:sr/lib/jvm/zulu21-ca-amd64/lib/lf8000 r--p 0001b000 00:2d 59965 0 00:2d 132709                     /usr/lib/x86_64-linux-gnu/lib0 r-xp 00001000 00:2d 132709    -linux-gnu/librt.so.1
+7fccb53fb000-7fccb53fc000 r--p 00002000 00-p 00002000 00:2d 132709        ux-gnu/librt.so.1
+7fccb53fd000-77fccb53fe000-7fccb5402000 rw-p 032695                     /usr/lib/x86_64-linux-gnu/libc.so.6
+7f_64-linux-gnu/libc.so.6
+7fccb55dfccb55e4000 rw-p 00000000 00:00 p 00000000 00:2d 132697                     /usr/lib/x86_64-linux-gnu/libdl.so.2
+7fccb55e5000-7f        /usr/lib/x86_64-linux-gn00 00:2d 132697                                   /usr/lib/x86_6000 00:2d 132707                     /usr/lib/x86_64-linux-gnu/l           /usr/lib/x86_64-linux000 00:2d 59930                 930                      /usr/liibz.so.1.2.13
+7fccb561d000-7fccb000 00:00 0 
+7fccb5629000-7fccb5ccb562a000-7fccb562b000 ---p 0000000000 00:2d 132692            64.so.2
+7fccb565e000-7fccb566000         /usr/lib/x86_64-linux-g 00:00 0                        ffff601000 --xp 00000000 00:00 0                  [vsyscall]
+          = true                                      {product} {ergonomic}
+
+Logging:
+Log output configuration:
+ #0: stdout all=warning uptime,level,tags foldmultilines=false
+ #1: stderr all=off uptime,level,tags foldmultilines=false
+
+Environment Variables:
+PATH=/home/kiranmundy/.local/bin:/home/kiranmundy/Flutter/flutter/bin/:/home/kiranmundy/Flutter/flutter/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/snap/bin:/home/kiranmundy/android/cmdline-tools/latest/bin:/home/kiranmundy/android/cmdline-tools/latest/bin
+XDG_CONFIG_HOME=/home/kiranmundy/.config
+SHELL=/bin/bash
+DISPLAY=:0
+LANG=en_US.UTF-8
+TERM=xterm-256color
+
+Active Locale:
+LC_ALL=en_US.UTF-8
+LC_COLLATE=en_US.UTF-8
+LC_CTYPE=en_US.UTF-8
+LC_MESSAGES=en_US.UTF-8
+LC_MONETARY=en_US.UTF-8
+LC_NUMERIC=en_US.UTF-8
+LC_TIME=en_US.UTF-8
+
+Signal Handlers:
+   SIGSEGV: crash_handler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, unblocked
+    SIGBUS: crash_handler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, unblocked
+    SIGFPE: crash_handler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, unblocked
+   SIGPIPE: javaSignalHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+   SIGXFSZ: javaSignalHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+    SIGILL: crash_handler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, unblocked
+   SIGUSR2: SR_handler in libjvm.so, mask=00000000000000000000000000000000, flags=SA_RESTART|SA_SIGINFO, blocked
+    SIGHUP: UserHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+    SIGINT: UserHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+   SIGTERM: UserHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+   SIGQUIT: UserHandler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, blocked
+   SIGTRAP: crash_handler in libjvm.so, mask=11100100010111111101111111111110, flags=SA_RESTART|SA_SIGINFO, unblocked
+
+
+Periodic native trim disabled
+
+---------------  S Y S T E M  ---------------
+
+OS:
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+uname: Linux 6.6.99-09000-gd3ae1caecf39 #1 SMP PREEMPT_DYNAMIC Thu, 27 Nov 2025 21:00:42 -0800 x86_64
+OS uptime: 0 days 0:53 hours
+libc: glibc 2.36 NPTL 2.36 
+rlimit (soft/hard): STACK 8192k/infinity , CORE 0k/infinity , NPROC 25869/25869 , NOFILE 1048576/1048576 , AS infinity/infinity , CPU infinity/infinity , DATA infinity/infinity , FSIZE infinity/infinity , MEMLOCK infinity/infinity
+load average: 6.40 2.97 1.50
+
+/proc/meminfo:
+MemTotal:        6625072 kB
+MemFree:         1480020 kB
+MemAvailable:    2897268 kB
+Buffers:               0 kB
+Cached:          1417248 kB
+SwapCached:            0 kB
+Active:          4444552 kB
+Inactive:         580844 kB
+Active(anon):    3713316 kB
+Inactive(anon):        0 kB
+Active(file):     731236 kB
+Inactive(file):   580844 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                40 kB
+Writeback:             0 kB
+AnonPages:       3608172 kB
+Mapped:           294540 kB
+Shmem:            105144 kB
+KReclaimable:      84668 kB
+Slab:                  0 kB
+SReclaimable:          0 kB
+SUnreclaim:            0 kB
+KernelStack:       12672 kB
+PageTables:        29880 kB
+SecPageTables:         0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:     3312536 kB
+Committed_AS:   13435364 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:       14044 kB
+VmallocChunk:          0 kB
+Percpu:             3200 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+Hugetlb:               0 kB
+DirectMap4k:       62464 kB
+DirectMap2M:     6791168 kB
+DirectMap1G:     
+/sys/kernel/mm/transparent_hugepage/enabled: always madvise [never]
+/sys/kernel/mm/transparent_hugepage/hpage_pmd_size: 2097152
+/sys/kernel/mm/transparent_hugepage/defrag (defrag/compaction efforts parameter): always defer defer+madvise [madvise] never
+
+Process Memory:
+Virtual Size: 5293176K (peak: 5293176K)
+Resident Set Size: 189516K (peak: 189516K) (anon: 164188K, file: 25328K, shmem: 0K)
+Swapped out: 0K
+glibc malloc tunables: (default)
+
+/proc/sys/kernel/threads-max (system-wide limit on the number of threads): 51739
+262144
+/proc/sys/vm/swappiness (control to define how aggressively the kernel swaps out anonymous memory): 60
+/proc/sys/kernel/pid_max (system-wide limit on number of process identifiers): 
+container (cgroup) information:
+container_type: cgroupv1
+cpu_cpuset_cpus: 0-7
+cpu_memory_nodes: 0
+active_processor_count: 8
+no quota
+cpu_period: 100000
+cpu_shares: no shares
+memory_limit_in_bytes: unlimited
+memory_and_swap_limit_in_bytes: unlimited
+unlimited
+memory_usage_in_bytes: 5066204 k
+memory_max_usage_in_bytes: unlimited
+kernel_memory_usage_in_bytes: 108980 k
+112844 k
+maximum number of tasks: unlimited
+current number of tasks: 491
+
+KVM virtualization detected
+Steal ticks since vm start: 0
+Steal ticks percentage since vm start:  0.000
+
+CPU: total 8 (initial active 8) (8 cores per cpu, 1 threads per core) family 6 model 154 stepping 4 microcode 0x1, cx8, cmov, fxsr, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, sha, fma, vzeroupper, clflush, clflushopt, clwb, hv, serialize, rdtscp, rdpid, fsrm, f16c, pku, ospke
+CPU Model and flags from /proc/cpuinfo:
+model name	: 12th Gen Intel(R) Core(TM) i3-1215U
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves avx_vnni arat vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq rdpid movdiri movdir64b fsrm md_clear serialize flush_l1d arch_capabilities
+<Not Available>
+<Not Available>
+Core performance/turbo boost: <Not Available>
+
+Memory: 4k page, physical 6625072k(3086296k free), swap 0k(0k free)
+Page Sizes: 4k
+
+vm_info: OpenJDK 64-Bit Server VM (21.0.7+6-LTS) for linux-amd64 JRE (21.0.7+6-LTS) (Zulu21.42+19-CA), built on 2025-04-07T10:56:51Z by "zulu_re" with gcc 11.2.0
+
+END.

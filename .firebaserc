@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "tennis-app-mp-2026"
+  },
+  "targets": {},
+  "etags": {
+    "tennis-app-mp-2026": {
+      "extensionInstances": {
+        "send-message": "e3ef76cbe9615c955b0f75e70241721c9476276f2142bd8e53956b34a1d72fe3"
+      }
+    }
+  }
+}

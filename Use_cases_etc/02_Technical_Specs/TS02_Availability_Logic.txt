@@ -1,0 +1,14 @@
+TS02_Availability_Logic
+Status: Draft | Version: 1.0
+1. Proximity Calculation
+●​ Method: Haversine formula executed on the client-side for sorting the list, or Firestore
+geohashes for server-side filtering.
+●​ Privacy Blur: displayed_distance = round(actual_distance, 1).
+2. Heatmap Query Logic
+●​ Query: SELECT start_time, end_time FROM Matches WHERE id IN
+(SELECT match_id FROM Match_Participants WHERE player_id IN
+[Selected_IDs] AND status = 'Confirmed').
+●​ Collision Rule: If a player has a match from 10:00–11:30, that entire block is marked
+"Busy" for that specific player_id.
+
+

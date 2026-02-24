@@ -1,0 +1,32 @@
+UC04_Player_Experience
+Status: Draft
+Version: 1.1
+Primary Flow:
+1.​ Entry Point: User receives an SMS/Email containing a tokenized Deep Link for a
+specific match.
+2.​ The Landing Page: * Clicking the link takes the user into the app (or a mobile
+web-view).
+○​ The user sees the match details: Time, Location, and the names of other players
+already in the match.
+3.​ Accepting the Match:
+○​ The user clicks a "Join" or "Accept" button within the app interface.
+○​ Success State: If a slot is available, the match moves to the user's "Scheduled
+Matches" view.
+○​ Waitlist State: If the last slot was taken while the page was loading, the user is
+offered the single "Waitlist" spot.
+4.​ Removing Oneself (Drop Out):
+○​ A confirmed player selects "Drop Out" from the match details.
+○​ System Check: * If a Waitlist player exists, they are automatically promoted to
+"Confirmed."
+■​ If No Waitlist player exists, the match is marked as "Vacant" and
+reappears in the feeds of the highest Circle reached.
+5.​ Notifications: * If a player drops out, the Organizer is notified immediately.
+○​ If a waitlisted player is promoted, they receive a "You're In" notification.
+Test Case Preview:
+●​ Verify that the Deep Link recognizes the user's "Prospect" or "Active" status and directs
+them to the correct onboarding or match page.
+●​ Verify that the "Join" button correctly handles the race condition if the match fills up.
+●​ Verify that dropping out correctly triggers the "One-Click" promotion of the waitlisted
+player.
+
+

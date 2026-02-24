@@ -1,0 +1,43 @@
+Page 02: The Players Page
+1. UI/UX Flow & Logic
+
+●​ The Directory View: * A list of all players in your Circles (Circle 1, 2, 3).
+○​ Each player card shows: Name, NTRP, Gender, and a "Proximity"
+tag (e.g., "2 miles away").
+●​ The "Availability & Heatmap" Feature:
+○​ This is the feature you described. When you select a player (or look
+at their summary), the app shows a mini-calendar view for that
+person.
+○​ Logic: It doesn't need to show private details, just "Busy" or "Match
+Scheduled" blocks.
+○​ Strategic Utility: If you see three players from Circle 1 are all "Free"
+on Thursday at 10:00 AM, that’s your signal to create a match.
+●​ Direct Recruiting:
+○​ A "Direct Message/Invite" button next to each player. As we
+discussed, this bypasses notification preferences for urgent needs.
+●​ Search & Filter:
+○​ Filter by NTRP range (e.g., "Show me all 4.0 players") or Gender.
+2. The "Unified Calendar" View
+
+You mentioned wanting to see the Available Matches organized by calendar.
+●​ The Interface: A vertical or horizontal weekly calendar.
+●​ Empty Slots: The calendar shows "Open Slots" where matches could
+happen, or where invitations are currently pending.
+●​ Comparison: Your personal "Scheduled Matches" appear in a different
+color (e.g., Green) and "Available Invitations" in another (e.g., Blue).
+
+UI02_Players_Page
+Status: Draft | Version: 1.0
+
+1. Directory Component
+●​ List Item: Name, NTRP, Gender, Distance (calculated via geopoint).
+●​ Selection: Multi-select checkboxes enabled by default.
+●​ Map Toggle: Switch to view players as pins on a local map.
+2. Availability Heatmap Component
+●​ Trigger: Activates when 1+ players are selected.
+●​ Display: A weekly grid (Hour vs. Day).
+●​ Data Aggregation: Queries the Match_Participants table for all selected
+player_ids where status = Confirmed.
+●​ Action: Tap an empty slot to "Create Match with Selected Players."
+
+

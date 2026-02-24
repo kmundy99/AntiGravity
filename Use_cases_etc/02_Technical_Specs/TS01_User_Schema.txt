@@ -1,0 +1,117 @@
+02_Technical_Specs / TS01_User_Schema
+Status: Draft | Version: 1.0
+1. Database Table: Users
+This table stores the persistent identity and preferences of the user.
+Field Name
+
+Data Type
+
+Constraint
+
+Description
+
+id
+
+UUID
+
+Primary Key
+
+Permanent internal identifier.
+
+display_name
+
+String
+
+Required
+
+Name shown to other players.
+
+primary_contact
+
+String
+
+Unique
+
+Verified phone number or email address.
+
+gender
+
+Enum
+
+Required
+
+M, F, NB. Used for match filtering.
+
+ntrp_level
+
+Float
+
+Required
+
+Skill rating (e.g., 3.5, 4.0).
+
+status
+
+Enum
+
+Required
+
+PROSPECT or ACTIVE.
+
+preference_notify
+
+Boolean
+
+Default: true
+
+User opt-in for automated alerts.
+
+notification_chann
+el
+
+Enum
+
+Default:
+Phone
+
+Defines the preferred delivery method (e.g.,
+EMAIL, SMS, or BOTH).
+
+home_address
+
+String
+
+Optional
+
+Formatted address from Google Places.
+
+geopoint
+
+Geopoint
+
+Optional
+
+Lat/Long for proximity queries.
+
+created_at
+
+Timestamp
+
+Required
+
+System generated.
+
+activated_at
+
+Timestamp
+
+Optional
+
+Null if still a Prospect.
+
+2. Validation Rules
+●​ NTRP Validation: Must be a multiple of 0.5.
+●​ Proximity Logic: Matches should be queried using the geopoint field using a
+Haversine formula or Firebase Geoqueries for the "5-mile" filter.
+
+

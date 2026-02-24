@@ -1,0 +1,28 @@
+UI05: Players & Recruitment Dashboard
+Goal: Allow an organizer to find players, check their proximity, and see their existing
+commitments before inviting them to a match.
+1. The Player List View
+●​ Search/Filter Bar: Filter by Name, NTRP Level (defaulting to the organizer’s range),
+and Circle (1, 2, or 3).
+●​ List Items: Each player card displays:
+○​ Name & NTRP Rating.
+○​ Proximity Badge: (e.g., "15 mins away") based on the geopoint address vs.
+the organizer's primary location.
+○​ Availability Status: A "Quick View" icon that shows if they are already in a
+match during the organizer's "planned" window.
+●​ Action: Checkboxes next to each name to "Bulk Invite" or "Direct Recruit."
+2. The Contextual Calendar View
+●​ Trigger: Activated when one or more players are selected.
+●​ Overlay Logic: Displays a unified calendar (Day/Week view) showing the blocked-off
+times for all selected players.
+●​ Visual Cue: A "Heatmap" style overlay where overlapping busy slots appear darker.
+This helps the organizer find a "white space" that works for everyone.
+3. The Direct Recruit (Urgent) Flow
+●​ Scenario: Match starts in < 24 hours and needs one more player.
+●​ Interaction: 1. Organizer selects a player. 2. Clicks "Direct Recruit". 3. A modal pops
+up: "This will bypass notification settings to send an urgent alert. Add a message?" 4.
+Input field for a short note (e.g., "Hey, we really need a 4th for tomorrow morning!"). 5.
+System Action: Sends an SMS/Email (based on notification_channel) regardless
+of the player's preference_notify: "no".
+
+

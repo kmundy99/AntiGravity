@@ -1,0 +1,50 @@
+Page 03: The Matches Tab (Consumer & Scheduler View)
+1. UI/UX Flow & Logic
+●​ The View Switcher: A prominent toggle at the top to flip between Calendar View (Grid)
+and Agenda View (List).
+○​ Calendar: Supports Day/Week/Month. It displays your confirmed matches in one
+color and "Available Invitations" in another.
+○​ Agenda: A chronological list of upcoming events.
+●​ The Invitation/LOV Logic:
+○​ When an organizer creates a match, they select a Circle.
+○​ The Filter: The "List of Values" (LOV) automatically filters out anyone whose
+NTRP rating falls outside the match's specified range.
+○​ User Control: The organizer can then "Select All" or cherry-pick specific people
+from that filtered list.
+●​ Match-Specific Chat:
+○​ Once a match is created, a dedicated Chat Thread is initialized.
+○​ Who is in: The Organizer, Confirmed players, and Invited/Waitlisted players.
+●​ Invited players can chat to clarify details (Pre-Acceptance).
+●​ Waitlisted players can monitor for openings or coordinate if they are "on
+standby."
+○​ The "Urgent" Rule: Chat messages and system reminders (e.g., "Match starts
+in 2 hours") trigger SMS/Push notifications regardless of the player's general
+"Notify" setting.
+
+03_UI_UX_Flows / UI03_Matches_Tab_and_Chat
+Status: Draft | Version: 1.0
+1. Unified Calendar View
+●​ Visual Legend: * Confirmed: Solid Green.
+○​ Available (Invite Received): Outlined Blue.
+○​ Available (Public/Circle-level): Outlined Grey.
+Note: 'Available' matches only appear if the user’s NTRP rating matches the organizer’s
+specified range. If they don't qualify, the slot is invisible to them.
+●​ Interaction: Tapping any "Available" slot opens the Match Detail page with the "Join"
+button.
+2. The Chat Interface
+
+●​ Entry Point: An icon on the Match Detail page or a dedicated "Messages" tab.
+●​ Behavior: * New messages trigger a "Transactional Notification."
+○​ Thread is archived 24 hours after the match ends.
+UI Behavior - Pre-Acceptance Chat: The "Match Detail" page (visible after clicking an invite
+link) should feature a "Chat/Questions" icon. Clicking this opens a limited chat window. This
+allows a player to clarify details with the organizer before they officially commit to the "Accepted"
+status.
+
+Architecture Note - Visibility & Access:
+NTRP Filter: "Available" matches are only visible to users within the required NTRP range.
+Chat Archiving: The Match Chat becomes "Read-Only" 24 hours after the match ends. It
+remains accessible in the History tab for reference (e.g., court numbers or notes) but no new
+messages can be sent.
+
+

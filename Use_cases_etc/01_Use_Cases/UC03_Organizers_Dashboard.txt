@@ -1,0 +1,40 @@
+UC03_Organizers_Dashboard
+Status: Draft
+Version: 1.1
+Primary Flow:
+1.​Access: Organizer opens the "My Matches" tab and selects a
+specific match.
+2.​Roster Visibility: System displays the names and status of the 4
+slots + 1 waitlist slot.
+3.​Tier Management: * System displays: "Currently inviting Circle 1.
+Next: Circle 2 in 01:45:00."
+○​ Organizer has the option to click "Invite Circle 2 Now" to
+bypass the timer.
+4.​Manual Player Removal:
+○​ Organizer selects "Remove" next to a player's name.
+○​ Note Field: A modal appears allowing the Organizer to input
+a reason (e.g., "Replacing with a family member").
+○​ Execution: System removes the player and sends them a
+notification containing the Organizer's message.
+5.​Edit/Cancel: * Edit: If Organizer edits Time/Location, all
+Confirmed and Waitlisted players receive an update notification.
+○​ Cancel: Organizer deletes the match. A modal appears for a
+"Cancellation Message." All players are notified with the
+reason, and the match is removed from all feeds.
+6.​Direct Recruit:
+○​ Organizer selects "Direct Recruit."
+○​ Organizer selects specific target players or an entire
+Circle.
+○​ Urgent Override: System sends notifications that bypass the
+players' "Notify" preferences to ensure the message is seen.
+Test Case Preview:
+●​ Verify that clicking "Invite Circle 2 Now" immediately triggers
+notifications to Circle 2 and resets the escalation timer for
+Circle 3.
+
+●​ Verify that removing a player correctly triggers the "Vacancy
+Logic" (auto-promoting waitlist or re-opening the feed).
+●​ Verify that the "Removal Message" is correctly delivered to the
+removed player.
+
+

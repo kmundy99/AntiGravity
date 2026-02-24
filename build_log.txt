@@ -1,0 +1,237 @@
+[  +97 ms] executing: uname -m
+[   +5 ms] Exit code 0 from: uname -m
+[        ] x86_64
+[   +9 ms] Artifact Instance of 'MaterialFonts' is not required, skipping update.
+[        ] Artifact Instance of 'GradleWrapper' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterWebSdk' is not required, skipping update.
+[        ] Artifact Instance of 'LegacyCanvasKitRemover' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterSdk' is not required, skipping update.
+[        ] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FontSubsetArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'PubDependencies' is not required, skipping update.
+[        ] executing: [/home/kiranmundy/Flutter/flutter/] git -c log.showSignature=false log HEAD -n 1 --pretty=format:%ad --date=iso
+[  +51 ms] Exit code 0 from: git -c log.showSignature=false log HEAD -n 1 --pretty=format:%ad --date=iso
+[        ] 2026-02-12 17:12:32 -0800
+[  +39 ms] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterWebSdk' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterEngineStamp' is not required, skipping update.
+[        ] Artifact Instance of 'LegacyCanvasKitRemover' is not required, skipping update.
+[   +5 ms] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[  +78 ms] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[   +2 ms] Artifact Instance of 'FlutterEngineStamp' is not required, skipping update.
+[   +3 ms] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[ +103 ms] Skipping pub get: version match.
+[ +119 ms] Found plugin url_launcher at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher-6.3.2/
+[   +6 ms] Found plugin url_launcher_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.5/
+[   +5 ms] Found plugin url_launcher_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_web-2.4.2/
+[   +8 ms] Found plugin url_launcher_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.5/
+[   +4 ms] Found plugin url_launcher_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_linux-3.2.2/
+[   +4 ms] Found plugin url_launcher_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_ios-6.4.1/
+[   +5 ms] Found plugin url_launcher_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.28/
+[  +25 ms] Found plugin shared_preferences at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences-2.5.4/
+[   +3 ms] Found plugin shared_preferences_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/
+[   +8 ms] Found plugin path_provider_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+[  +17 ms] Found plugin shared_preferences_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
+[   +3 ms] Found plugin shared_preferences_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
+[   +3 ms] Found plugin path_provider_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
+[   +7 ms] Found plugin shared_preferences_foundation at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.6/
+[   +3 ms] Found plugin shared_preferences_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.20/
+[  +19 ms] Found plugin pointer_interceptor at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor-0.10.1+2/
+[  +15 ms] Found plugin pointer_interceptor_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_web-0.10.3/
+[  +10 ms] Found plugin pointer_interceptor_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_ios-0.10.1+1/
+[   +3 ms] Found plugin flutter_keyboard_visibility at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility-6.0.0/
+[   +4 ms] Found plugin flutter_keyboard_visibility_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_windows-1.0.0/
+[   +8 ms] Found plugin flutter_keyboard_visibility_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_web-2.0.0/
+[   +2 ms] Found plugin flutter_keyboard_visibility_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_macos-1.0.0/
+[   +2 ms] Found plugin flutter_keyboard_visibility_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_linux-1.0.0/
+[   +3 ms] Found plugin firebase_core at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core-4.4.0/
+[   +5 ms] Found plugin firebase_core_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core_web-3.4.0/
+[  +10 ms] Found plugin cloud_firestore at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore-6.1.2/
+[   +1 ms] Found plugin cloud_firestore_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore_web-5.1.2/
+[  +58 ms] Found plugin url_launcher at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher-6.3.2/
+[   +2 ms] Found plugin url_launcher_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.5/
+[   +5 ms] Found plugin url_launcher_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_web-2.4.2/
+[   +3 ms] Found plugin url_launcher_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.5/
+[   +1 ms] Found plugin url_launcher_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_linux-3.2.2/
+[   +2 ms] Found plugin url_launcher_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_ios-6.4.1/
+[   +2 ms] Found plugin url_launcher_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.28/
+[  +11 ms] Found plugin shared_preferences at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences-2.5.4/
+[   +2 ms] Found plugin shared_preferences_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/
+[   +4 ms] Found plugin path_provider_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+[   +8 ms] Found plugin shared_preferences_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
+[   +2 ms] Found plugin shared_preferences_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
+[   +2 ms] Found plugin path_provider_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
+[   +4 ms] Found plugin shared_preferences_foundation at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.6/
+[   +5 ms] Found plugin shared_preferences_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.20/
+[   +9 ms] Found plugin pointer_interceptor at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor-0.10.1+2/
+[   +5 ms] Found plugin pointer_interceptor_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_web-0.10.3/
+[  +16 ms] Found plugin pointer_interceptor_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_ios-0.10.1+1/
+[   +9 ms] Found plugin flutter_keyboard_visibility at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility-6.0.0/
+[  +23 ms] Found plugin flutter_keyboard_visibility_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_windows-1.0.0/
+[  +18 ms] Found plugin flutter_keyboard_visibility_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_web-2.0.0/
+[   +8 ms] Found plugin flutter_keyboard_visibility_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_macos-1.0.0/
+[  +54 ms] Found plugin flutter_keyboard_visibility_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_linux-1.0.0/
+[   +8 ms] Found plugin firebase_core at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core-4.4.0/
+[  +49 ms] Found plugin firebase_core_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core_web-3.4.0/
+[ +155 ms] Found plugin cloud_firestore at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore-6.1.2/
+[  +97 ms] Found plugin cloud_firestore_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore_web-5.1.2/
+[ +306 ms] Generating /home/kiranmundy/AntiGravity_Tennis_App/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+[  +15 ms] Skipping generating GeneratedPluginRegistrant.java because it is up-to-date.
+[  +15 ms] Skipping generating generated_plugin_registrant.h because it is up-to-date.
+[   +1 ms] Skipping generating generated_plugin_registrant.cc because it is up-to-date.
+[   +3 ms] Skipping generating generated_plugins.cmake because it is up-to-date.
+[+1697 ms] This application is not configured to build on the web.
+[        ] To add web support to a project, run `flutter create .`.
+[   +1 ms] Launching lib/main.dart on Chrome in debug mode...
+[ +406 ms] Initializing file store
+[  +18 ms] Skipping target: gen_localizations
+[   +3 ms] Skipping target: gen_dart_plugin_registrant
+[   +4 ms] _composite: Starting due to {}
+[        ] _composite: Complete
+[   +5 ms] complete
+[   +3 ms] Updating assets
+[   +3 ms] runHooks() with {TargetFile: /home/kiranmundy/AntiGravity_Tennis_App/lib/main.dart, BuildMode: debug} and TargetPlatform.web_javascript
+[   +4 ms] runHooks() - will perform dart build
+[   +6 ms] Initializing file store
+[   +5 ms] dart_build: Starting due to {}
+[ +183 ms] : Checking 81 packages for hook/build.dart took 131 ms.
+[        ] Checking 81 packages for hook/build.dart took 131 ms.
+[   +1 ms] No packages with native assets. Skipping native assets compilation.
+[   +6 ms] dart_build: Complete
+[  +27 ms] Persisting file store
+[   +7 ms] Done persisting file store
+[  +10 ms] runHooks() - done
+[ +367 ms] Waiting for connection from debug service on Chrome...
+[  +49 ms] Found plugin url_launcher at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher-6.3.2/
+[   +3 ms] Found plugin url_launcher_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.5/
+[   +4 ms] Found plugin url_launcher_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_web-2.4.2/
+[   +2 ms] Found plugin url_launcher_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.5/
+[   +2 ms] Found plugin url_launcher_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_linux-3.2.2/
+[   +4 ms] Found plugin url_launcher_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_ios-6.4.1/
+[   +4 ms] Found plugin url_launcher_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.28/
+[  +29 ms] Found plugin shared_preferences at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences-2.5.4/
+[   +3 ms] Found plugin shared_preferences_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/
+[   +5 ms] Found plugin path_provider_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+[   +6 ms] Found plugin shared_preferences_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
+[   +3 ms] Found plugin shared_preferences_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
+[   +3 ms] Found plugin path_provider_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
+[   +5 ms] Found plugin shared_preferences_foundation at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.6/
+[   +2 ms] Found plugin shared_preferences_android at /home/kiranmundy/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.20/
+[   +2 ms] Found plugin pointer_interceptor at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor-0.10.1+2/
+[   +2 ms] Found plugin pointer_interceptor_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_web-0.10.3/
+[   +2 ms] Found plugin pointer_interceptor_ios at /home/kiranmundy/.pub-cache/hosted/pub.dev/pointer_interceptor_ios-0.10.1+1/
+[   +1 ms] Found plugin flutter_keyboard_visibility at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility-6.0.0/
+[   +1 ms] Found plugin flutter_keyboard_visibility_windows at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_windows-1.0.0/
+[   +2 ms] Found plugin flutter_keyboard_visibility_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_web-2.0.0/
+[   +2 ms] Found plugin flutter_keyboard_visibility_macos at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_macos-1.0.0/
+[   +4 ms] Found plugin flutter_keyboard_visibility_linux at /home/kiranmundy/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility_linux-1.0.0/
+[   +2 ms] Found plugin firebase_core at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core-4.4.0/
+[   +2 ms] Found plugin firebase_core_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/firebase_core_web-3.4.0/
+[   +6 ms] Found plugin cloud_firestore at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore-6.1.2/
+[   +2 ms] Found plugin cloud_firestore_web at /home/kiranmundy/.pub-cache/hosted/pub.dev/cloud_firestore_web-5.1.2/
+[ +197 ms] shaderc command: [/home/kiranmundy/Flutter/flutter/bin/cache/artifacts/engine/linux-x64/impellerc, --sksl, --iplr, --json, --sl=build/flutter_assets/shaders/ink_sparkle.frag, --spirv=build/flutter_assets/shaders/ink_sparkle.frag.spirv, --input=/home/kiranmundy/Flutter/flutter/packages/flutter/lib/src/material/shaders/ink_sparkle.frag, --input-type=frag, --include=/home/kiranmundy/Flutter/flutter/packages/flutter/lib/src/material/shaders, --include=/home/kiranmundy/Flutter/flutter/bin/cache/artifacts/engine/linux-x64/shader_lib]
+[   +1 ms] shaderc command: [/home/kiranmundy/Flutter/flutter/bin/cache/artifacts/engine/linux-x64/impellerc, --sksl, --iplr, --json, --sl=build/flutter_assets/shaders/stretch_effect.frag, --spirv=build/flutter_assets/shaders/stretch_effect.frag.spirv, --input=/home/kiranmundy/Flutter/flutter/packages/flutter/lib/src/material/shaders/stretch_effect.frag, --input-type=frag, --include=/home/kiranmundy/Flutter/flutter/packages/flutter/lib/src/material/shaders, --include=/home/kiranmundy/Flutter/flutter/bin/cache/artifacts/engine/linux-x64/shader_lib]
+[ +356 ms] <- reset
+[   +9 ms] /home/kiranmundy/Flutter/flutter/bin/cache/dart-sdk/bin/dartaotruntime /home/kiranmundy/Flutter/flutter/bin/cache/dart-sdk/bin/snapshots/frontend_server_aot.dart.snapshot --sdk-root /home/kiranmundy/Flutter/flutter/bin/cache/flutter_web_sdk/ --incremental --target=dartdevc --experimental-emit-debug-metadata -DFLUTTER_VERSION=3.41.1 -DFLUTTER_CHANNEL=stable -DFLUTTER_GIT_URL=https://github.com/flutter/flutter.git -DFLUTTER_FRAMEWORK_REVISION=582a0e7c55 -DFLUTTER_ENGINE_REVISION=3452d735bd -DFLUTTER_DART_VERSION=3.11.0 --output-dill /tmp/flutter_tools.ZEPAWT/flutter_tool.HNGKEP/app.dill --packages /home/kiranmundy/AntiGravity_Tennis_App/.dart_tool/package_config.json -Ddart.vm.profile=false -Ddart.vm.product=false --enable-asserts --track-widget-creation --filesystem-root /tmp/flutter_tools.ZEPAWT/flutter_tools.TTEXVG --filesystem-scheme org-dartlang-app --initialize-from-dill build/fa875cea96ff9eb23bebfb51f104f901.cache.dill.track.dill --platform file:///home/kiranmundy/Flutter/flutter/bin/cache/flutter_web_sdk/kernel/ddc_outline.dill --verbosity=error --dartdevc-canary --dartdevc-module-format=ddc
+[  +10 ms] <- compile org-dartlang-app:/web_entrypoint.dart
+[+21784 ms] "flutter run" took 26,741ms.
+[ +491 ms] The Dart compiler exited unexpectedly.
+[   +1 ms] 
+           #0      throwToolExit (package:flutter_tools/src/base/common.dart:34:3)
+           #1      DefaultResidentCompiler._compile.<anonymous closure> (package:flutter_tools/src/compile.dart:927:15)
+           #2      _rootRun (dart:async/zone_root.dart:27:47)
+           #3      _CustomZone.run (dart:async/zone.dart:726:19)
+           #4      _CustomZone.runGuarded (dart:async/zone.dart:625:7)
+           #5      _BufferingStreamSubscription._sendDone.sendDone (dart:async/stream_impl.dart:434:13)
+           #6      _BufferingStreamSubscription._sendDone (dart:async/stream_impl.dart:444:7)
+           #7      _BufferingStreamSubscription._close (dart:async/stream_impl.dart:333:7)
+           #8      _SinkTransformerStreamSubscription._close (dart:async/stream_transformers.dart:91:11)
+           #9      _EventSinkWrapper.close (dart:async/stream_transformers.dart:21:11)
+           #10     _StringAdapterSink.close (dart:convert/string_conversion.dart:241:11)
+           #11     _LineSplitterSink.close (dart:convert/line_splitter.dart:144:11)
+           #12     _SinkTransformerStreamSubscription._handleDone (dart:async/stream_transformers.dart:136:24)
+           #13     _rootRun (dart:async/zone_root.dart:27:47)
+           #14     _CustomZone.run (dart:async/zone.dart:726:19)
+           #15     _CustomZone.runGuarded (dart:async/zone.dart:625:7)
+           #16     _BufferingStreamSubscription._sendDone.sendDone (dart:async/stream_impl.dart:434:13)
+           #17     _BufferingStreamSubscription._sendDone (dart:async/stream_impl.dart:444:7)
+           #18     _BufferingStreamSubscription._close (dart:async/stream_impl.dart:333:7)
+           #19     _SinkTransformerStreamSubscription._close (dart:async/stream_transformers.dart:91:11)
+           #20     _EventSinkWrapper.close (dart:async/stream_transformers.dart:21:11)
+           #21     _HandlerEventSink.close (dart:async/stream_transformers.dart:258:12)
+           #22     _SinkTransformerStreamSubscription._handleDone (dart:async/stream_transformers.dart:136:24)
+           #23     _rootRun (dart:async/zone_root.dart:27:47)
+           #24     _CustomZone.run (dart:async/zone.dart:726:19)
+           #25     _CustomZone.runGuarded (dart:async/zone.dart:625:7)
+           #26     _BufferingStreamSubscription._sendDone.sendDone (dart:async/stream_impl.dart:434:13)
+           #27     _BufferingStreamSubscription._sendDone (dart:async/stream_impl.dart:444:7)
+           #28     _BufferingStreamSubscription._close (dart:async/stream_impl.dart:333:7)
+           #29     _SinkTransformerStreamSubscription._close (dart:async/stream_transformers.dart:91:11)
+           #30     _EventSinkWrapper.close (dart:async/stream_transformers.dart:21:11)
+           #31     _StringAdapterSink.close (dart:convert/string_conversion.dart:241:11)
+           #32     _Utf8ConversionSink.close (dart:convert/string_conversion.dart:301:20)
+           #33     _ConverterStreamEventSink.close (dart:convert/chunked_conversion.dart:79:18)
+           #34     _SinkTransformerStreamSubscription._handleDone (dart:async/stream_transformers.dart:136:24)
+           #35     _rootRun (dart:async/zone_root.dart:27:47)
+           #36     _CustomZone.run (dart:async/zone.dart:726:19)
+           #37     _CustomZone.runGuarded (dart:async/zone.dart:625:7)
+           #38     _BufferingStreamSubscription._sendDone.sendDone (dart:async/stream_impl.dart:434:13)
+           #39     _BufferingStreamSubscription._sendDone (dart:async/stream_impl.dart:444:7)
+           #40     _BufferingStreamSubscription._close (dart:async/stream_impl.dart:333:7)
+           #41     _SyncStreamControllerDispatch._sendDone (dart:async/stream_controller.dart:806:19)
+           #42     _StreamController._closeUnchecked (dart:async/stream_controller.dart:652:7)
+           #43     _StreamController.close (dart:async/stream_controller.dart:645:5)
+           #44     _Socket._onData (dart:io-patch/socket_patch.dart:2881:21)
+           #45     _rootRunUnary (dart:async/zone_root.dart:56:13)
+           #46     _CustomZone.runUnary (dart:async/zone.dart:733:19)
+           #47     _CustomZone.runUnaryGuarded (dart:async/zone.dart:633:7)
+           #48     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381:11)
+           #49     _BufferingStreamSubscription._add (dart:async/stream_impl.dart:312:7)
+           #50     _SyncStreamControllerDispatch._sendData (dart:async/stream_controller.dart:798:19)
+           #51     _StreamController._add (dart:async/stream_controller.dart:663:7)
+           #52     _StreamController.add (dart:async/stream_controller.dart:618:5)
+           #53     new _RawSocket.<anonymous closure> (dart:io-patch/socket_patch.dart:2319:33)
+           #54     _NativeSocket.issueReadEvent.issue (dart:io-patch/socket_patch.dart:1640:18)
+           #55     _microtaskLoop (dart:async/schedule_microtask.dart:40:35)
+           #56     _startMicrotaskLoop (dart:async/schedule_microtask.dart:49:5)
+           #57     _runPendingImmediateCallback (dart:isolate-patch/isolate_patch.dart:127:13)
+           #58     _RawReceivePort._handleMessage (dart:isolate-patch/isolate_patch.dart:194:5)
+
+
+[        ] Running 3 shutdown hooks
+[  +38 ms] Waiting for connection from debug service on Chrome... (completed in 23.1s)
+[   +2 ms] Synced 0.0MB.
+[   +2 ms] Failed to compile application.
+[   +6 ms] Shutdown hooks complete
+[ +154 ms] exiting with code 1

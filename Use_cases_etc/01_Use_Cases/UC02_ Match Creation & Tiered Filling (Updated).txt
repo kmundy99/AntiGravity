@@ -1,0 +1,38 @@
+UC02: Match Creation & Tiered Filling (Updated)
+1. Visibility & "Ghost" Notifications
+●​ The Notification Rule: A user only receives a Push/SMS if Preference_Notify == True.
+●​ The Feed Rule: If Preference_Notify == False, the user receives no alert, but the match
+appears in their "Available Matches" feed.
+●​ Cumulative Visibility: When a match escalates from Circle 1 to Circle 2, Circle 1 retains
+visibility. The "Available" pool only grows; it never shrinks until the match is full.
+●​ The "Filled" State: Once the Required_Count is met, the match is removed from all
+feeds. It only appears in the "Scheduled Matches" tab for the Organizer and the 3
+Confirmed Players.
+2. The Waitlist & Dropping Out
+●​ Waitlist Capacity: Exactly 1 spot per match.
+●​ Auto-Promotion: If a confirmed player drops out:
+1.​ The Waitlist player is automatically promoted to Confirmed & Notified ( bypasses
+all Preference_Notify settings).
+2.​ The Match remains Hidden from feeds (because it is still technically full).
+●​ Vacancy Logic: If a confirmed player drops out and the Waitlist is empty:
+1.​ The match status reverts to Filling.
+2.​ It reappears in the feeds of the highest Circle reached (and all preceding Circles).
+3.​ Notifications are re-sent to those with active preferences.
+3. Organizer Overrides & Direct Recruiting
+●​ Manual Management: The Organizer has "God Mode" for their match—they can
+add/remove any user or delete the match entirely at any time.
+●​ The "1-Hour Warning": At $T-60$ minutes, if Confirmed_Count < Required_Count:
+1.​ A "Match Underfilled" alert is sent to all confirmed players and the organizer.
+2.​ The Organizer can trigger Direct Recruiting. This bypasses all
+Preference_Notify settings (it is treated as a direct "Urgent" message) to find a
+last-minute sub.
+4. Race Conditions
+●​ Timestamp Priority: In a collision for the last slot, the earliest Server_Timestamp wins.
+●​ Fallback: The "loser" of the collision is automatically offered the Waitlist spot if it is
+vacant; otherwise, they receive a "Match Full" notification.
+
+Technical Implementation Note (for our 02_Technical_Specs folder later)
+We will need to ensure our database schema has a Matches table and a Match_Participants
+table. The Match_Participants table will need statuses like Confirmed, Waitlisted, and Declined.
+
+

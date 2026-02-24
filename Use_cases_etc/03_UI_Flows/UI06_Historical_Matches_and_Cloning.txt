@@ -1,0 +1,32 @@
+UI06: Historical Matches & Cloning
+Status: Draft | Version: 1.1
+1. The "Past Matches" View
+●​ Trigger: Matches automatically move from the "Upcoming" list to the "History" list 24
+hours after the scheduled start time.
+●​ Entry Point: A "Past" or "History" sub-tab within the Matches tab.
+●​ Card Layout: * Summary of Date and Location.
+○​ Names/Avatars of the 4 players who were on the final roster.
+●​ Primary Action: A prominent "Schedule Rematch" button.
+2. The Cloning Flow (Logic) When a user clicks "Schedule Rematch":
+●​ Step 1: The Draft State. The app opens a new Match Creation page and pre-fills the
+following from the old match:
+○​ Activity Type: (e.g., Tennis).
+○​ Location: (e.g., Lexington High).
+○​ The Roster: The 3 other players are automatically added to the invitation list.
+●​ Step 2: Date/Time Selection. * The Date/Time fields are highlighted for the organizer to
+update.
+●​ Step 3: Automated Availability Check. * As soon as the organizer picks a new time,
+the app performs a background check on the 3 pre-filled players.
+○​ If any are "Busy" (already in another match), a warning icon appears: "Note:
+Joost appears to have another match at this time."
+●​ Step 4: Activation. * When the organizer clicks "Send," invitations are sent to those
+specific individuals. Note: This bypasses "Circle" logic as it is a direct re-invite.
+3. Reference Access & Chat
+●​ Read-Only Chat: Users can click into a historical match to view the chat log.
+○​ Behavior: The thread becomes "Read-Only" 24 hours after match completion.
+○​ Value: Allows players to retrieve past info (e.g., "Which gate code did we use?").
+●​ Privacy: Only the original 4 players and the organizer have permission to view the
+historical record and its associated chat.
+●​
+
+

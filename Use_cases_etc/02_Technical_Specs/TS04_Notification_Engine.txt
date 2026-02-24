@@ -1,0 +1,36 @@
+TS04_Notification_Engine
+Status: Draft | Version: 1.0
+1. Notification Priority Tiers The engine must distinguish between "Standard" and
+"Transactional" alerts to ensure users aren't spammed, but also don't miss critical updates.
+●​ Tier 1: Transactional (Always On)
+○​ Triggers: Match Time/Location changes, Match Cancellation, "Direct Recruit"
+alerts, and Match Reminders (2 hours before start).
+○​ Behavior: Bypasses the user's preference_notify: OFF setting.
+○​ Delivery: Sent via the user's selected notification_channel
+(SMS/Email/Both).
+●​ Tier 2: Invitational (Opt-in)
+○​ Triggers: New match invitations via "Circle" broadcast or "Rematch" cloning.
+○​ Behavior: Only sent if preference_notify is ON.
+●​ Tier 3: Chat Alerts
+○​ Triggers: New messages in a match the user has accepted or been invited to.
+○​ Behavior: Batching logic—if 5 messages arrive in 2 minutes, send only 1
+notification to avoid "vibration fatigue."
+2. Deep Link Structure Every notification must contain a Dynamic Link (using Firebase
+Dynamic Links or similar) to handle the routing:
+●​ Format: https://tennisapp.link/match/{matchId}
+●​ Logic:
+1.​ App Installed: Opens the app directly to the Match Detail page.
+2.​ App Not Installed: Redirects to the App/Play Store. After install, "deferred deep
+linking" takes them back to that specific match.
+3.​ Web/Desktop: Opens a mobile-web version of the Match Landing Page (for
+Quick Accept).
+3. External Service Integration
+●​ SMS Provider: Twilio API (Standard SMS for invites, WhatsApp optional for
+international).
+●​ Email Provider: SendGrid API (Using templates to ensure "Accept" buttons are
+prominent).
+●​ Payload Requirement: Every notification payload must include matchId,
+organizerName, startTime, and locationName to allow the user to see the
+"Who/When/Where" without opening the app.
+
+

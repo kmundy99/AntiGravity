@@ -1,0 +1,64 @@
+TS03_Match_Lifecycle
+1. Shadow Profile & Merge Logic
+●​ Shadow Record Creation: When an organizer enters an email or phone number for an
+unregistered user, the system creates a player record with accountStatus:
+"provisional".
+●​ Merge on Registration: When a user logs in with a phone number or email that
+matches a "provisional" record, the system merges the accounts, prompting them for
+required profile details (Full Name, NTRP, Notification Prefs) before granting "Organizer"
+permissions.
+2. Roster & Waitlist Management
+●​ Confirmation States: Each roster slot must track specific statuses: invited,
+accepted, declined, or waitlisted.
+●​ The "N+1" Rule: Each match supports a fixed roster (e.g., 4 players) plus exactly one
+waitlist spot.
+●​ Vacancy Logic: If an accepted player drops out, the system automatically moves the
+waitlisted player to accepted and triggers a notification. The match then reappears
+in the feeds of eligible circles to fill the now-vacant waitlist spot.
+3. Notification & "Direct Recruit" Bypass
+●​ Circle Invitations: Automated invites should exclude any players already marked as
+accepted in the roster.
+●​ Direct Recruit: This function triggers a "Priority" notification that ignores the user’s
+preference_notify: "no" setting, specifically for urgent manual recruiting by the
+organizer.
+4. Post-Match Transition
+●​ History Move: A daily background task must move matches with a match_date in the
+past from the "Scheduled" view to a "History" tab.
+●​ Copy Logic: Historical matches can be "cloned" to a new date, which pre-populates the
+roster with the previous players in an invited state, requiring them to re-accept for the
+new date.
+
+We should ensure the Match Chat is "archived" once the match moves to Historical (UI06). It
+remains readable for reference (e.g., "Who brought the balls last time?"), but becomes
+read-only.
+
+Section 5: Chat & Notification Rules
+●​ Access Tier 1 (Full): Organizer and Accepted players have two-way chat access.
+Notifications are "High Priority" (ignore user-level mute).
+●​ Access Tier 2 (Passive): Waitlisted players can read chat and send messages. They
+receive notifications for Organizer updates but can opt to mute general banter.
+●​ Access Tier 3 (Provisional): Invited (Not yet accepted) players can see the chat on
+the landing page and send a "Pre-Acceptance" message (e.g., to negotiate time). These
+messages are sent via SMS to the Organizer if the player is not yet in-app.
+●​ Automatic System Messages: The chat service must auto-post a system message
+when:
+○​ The Time or Location is edited.
+○​ A player moves from the Waitlist to the Roster.
+○​ The Match is canceled.
+
+Section 6: The "Auto-Promotion" Engine (Waitlist Logic)
+●​ The "Waterfall" Trigger: When a player’s status changes from accepted to declined
+in a full match, the system must immediately trigger the promotion script.
+●​ Logic Steps:
+1.​ Identify Successor: Select the player with the earliest waitlist_timestamp.
+2.​ Status Update: Change their status from waitlisted to accepted.
+3.​ Transactional Notification: Send a "High Priority" alert to the promoted player:
+"Good news! A spot opened up. You are now IN for the 4.0 match at Lexington
+High."
+4.​ Organizer Alert: Notify the organizer: "Joost dropped out; Johan has been
+promoted from the waitlist."
+●​ The "Late-Stage" Exception: * If a dropout occurs less than 2 hours before start time,
+the system should also alert the Organizer with a shortcut to the "Direct Recruit" (UI05)
+flow, in case the waitlisted player doesn't respond in time.
+
+

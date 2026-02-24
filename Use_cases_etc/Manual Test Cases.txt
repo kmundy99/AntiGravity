@@ -1,0 +1,108 @@
+1.​ I create an account for myself. Then I
+○​ Create a match
+○​ Enter emails of 4 friends to “invite” to the match (these people are not registered
+yet and I should be able to enter their emails or phone numbers).
+○​ Each person receives an email or text with the information about the match.
+■​ Person A declines.
+■​ Person B accepts, without going into the app, so we don’t have their
+name etc.
+■​ Person C replies saying that if I could adjust the time to 30 mins later,
+they could join.
+■​ I add Person B & Person C, open the chat against the match and ask in
+chat if if it’s okay to delay by 30 mins.
+1.​ System Check: Person C uses the Match Chat (available on the
+invite landing page) to request the delay. This triggers a push
+notification/SMS to the Organizer. The Organizer edits the match
+time in-app, which sends an automated "Time Updated" alert to all
+invited/accepted players.
+■​ Person A responds that it’s ok, so does Person C. I change the time on
+the match & save it.
+■​ I now go into Players section and add in some 5-6 emails of friends as
+circle 1 & I email everyone in Circle 1 to ask if they can join the match.
+■​ Email goes to everyone, except the Person A & Person B who are already
+confirmed in the match.
+■​ Person D accepts.
+■​ Person E accepts and gets put on the waitlist.
+■​ Person F attempts to accept and gets notified with a nice message that
+their interest is appreciated, but the roster is now full.
+■​ Match date passes by.
+■​ Player B, C & D and the organizer should no longer see the match in their
+scheduled matches scream or it should be available in a separate history
+match.
+○​ (We should add the ability to copy from historical matches - in those cases the
+players should already be copied in, just the date/time & possibly location is
+updated. Then it follows the same flow by asking players if they can play and only
+confirming them once they “accept”)
+2.​ Person B goes into the app with their phone number.
+○​ They’re taken to a profile page, where they enter all required details.
+○​ Once these details are saved, they can also organize matches.
+○​ If any of the fields are not filled out, they can still “accept” match invitations, but
+they cannot organize matches.
+○​ Persons without an NTRP rating simply get all invites, if they are in the
+appropriate circle.
+
+3.​ Person B has entered their display name, but not the other details. They click on Create
+Match.
+○​ They are shown the entry screen where they must enter all their details: Full
+Name, when a new match is created? yes/no. Notification Preference: Via
+Email/Phone
+○​ Once they have saved this, they can proceed with creating a new match.
+○​ Once match is created, they are shown as the first player.
+○​ The match now shows up in the feed of all eligible players for that match.
+○​ Eligible players who have notification turned on, also get notified via whichever
+means they’ve chosen.
+○​ Player C sees this match on their feed & clicks join. They get added to the match
+and the organizer gets notified.
+○​ 24 hours before the match, if there are less than the required number of players,
+the organizer is notified.
+○​ Organizer goes to the players window and queries for players who are “not
+already scheduled at that time” and who meet the eligibility criteria. Organizer
+selects Direct Recruit and selects 4-5 players, picks the match from a List, enters
+a text and hits send. Those Players are notified via their Notification Preference
+Email/Phone. The “direct recruit” bypasses the normal notification preference, so
+even if it’s set to “No”, they will get notified.
+
+Edge Case & Stress Test Scenario
+Scenario A: The "Ghost" Player
+The Setup: You invite a friend who isn't on the app yet using their phone number.
+●​ The "What If": What if they click the link, but decide they want to use a different phone
+number to register than the one you used to invite them?
+●​ The UI Check: Does UI01 (Registration) handle this? We discussed a "Shadow ID"
+merge. If they change the number, the system won't recognize them as the "Invited"
+player unless they verify the original number first.
+●​ Gap? We might need a "Claim Invite" step in UI01 if the registration phone $\neq$
+invitation phone.
+
+Scenario B: The Last-Minute Dropout
+The Setup: A match is full (4 players + 1 waitlist). 1 hour before the match, an "Accepted"
+player drops out.
+●​ The "What If": Does the waitlisted player get in automatically, and does the match stay
+"closed" to everyone else?
+
+●​ The UI Check: According to UI03 and our vacancy logic, the waitlisted player is
+promoted and notified.
+●​ The Twist: Since the waitlist is now empty and it's < 1 hour before the match, the "Direct
+Recruit" logic in UI05 should trigger to help the organizer find a replacement fast.
+●​ Check: Is the organizer notified immediately when the waitlisted player is promoted?
+(We should ensure this is in UI03).
+
+Scenario C: The "Stealth" Organizer
+The Setup: You are organizing a match and want to invite "Circle 1," but you want to exclude
+one specific person in that circle because they always play too aggressively.
+●​ The "What If": Does the UI allow for "Select All in Circle" minus one?
+●​ The UI Check: UI05 (Players Page) allows checking/unchecking individuals.
+●​ Refinement: We should ensure that when moving from Circle 1 to Circle 2 (automated
+escalation), the "excluded" person from Circle 1 remains excluded.
+
+Scenario D: The Over-Eager Double-Click
+The Setup: The match has one open spot. Two players, Alex and Sam, both have the app open
+on the "Match Detail" page.
+●​ The "What If": Alex clicks "Accept" at 10:00:01.05. Sam clicks "Accept" at 10:00:01.08.
+●​ The UI Check: UI04 (Invitation) handles this with the "Race Condition" logic. Alex gets
+the spot.
+●​ The UI Feedback: Does Sam get a "Match Full" message immediately, or does the
+button just spin?
+●​ Tech Spec Note: We need to ensure the UI updates via a listener so Sam's "Accept"
+button turns into a "Join Waitlist" button in real-time.
+
+

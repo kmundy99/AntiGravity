@@ -1,0 +1,13 @@
+UI04: Match Invitation & Acceptance (The "Deep Link" Flow)
+●​ The Invitation: Player receives an SMS/Email with: "Kiran invited you to a 4.0 Doubles
+Match at Lexington Courts, Saturday at 9 AM. [Join Match Link]"
+●​ The Landing: * If Logged In: Opens the app directly to the Match Detail Page with a
+prominent "Accept" or "Decline" button.
+○​ If Not Logged In/New User: Opens a "Welcome" screen showing the match
+details. Clicking "Join" triggers the UC01 Registration Flow (Phone/Email
+pre-populated).
+●​ The Race Condition: If two players click "Accept" for the last spot simultaneously, the
+server validates the timestamp. The "winner" gets the spot; the second person gets a
+popup: "Sorry, this match just filled up! You've been added to the waitlist."
+
+

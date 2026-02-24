@@ -1,0 +1,12 @@
+# Standard Flutter/Dart ignores
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Firebase & Secrets
+android/key.properties
+ios/Runner/GoogleService-Info.plist
+lib/generated_plugin_registrant.dart
+.env

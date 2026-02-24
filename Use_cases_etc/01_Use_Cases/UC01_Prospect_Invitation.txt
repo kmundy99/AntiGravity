@@ -1,0 +1,63 @@
+UC01: Prospect Invitation and Onboarding
+Project: Social Orchestration App (TennisStudio)
+Status: Draft
+Version: 1.0
+Core Concept: Growth through "Shadow Profiles" and relational-based social circles.
+
+1. Goal
+To allow an existing user to invite a contact (via phone or email) who is not yet in the system,
+creating a persistent "Shadow Profile" that maintains social context until the user officially joins.
+
+2. Actors
+●​ Inviter (User A): An active, authenticated user.
+●​ Invitee (User B): A "Prospect" who may or may not have a record in the database.
+
+3. Pre-conditions
+●​ User A is logged in.
+●​ User A has provided User B’s phone number or email address.
+
+4. Primary Flow: The Invitation
+1.​ Identity Search: User A initiates an invite. The system searches the Users table for the
+unique identifier (phone/email).
+2.​ Record Handling:
+○​ If record exists: The system identifies the existing User_ID.
+○​ If no record exists: The system creates a new record with Status:
+Prospect.
+3.​ Relational Mapping (The "Circle" Logic): * The system creates a record in the
+Connections table linking User A to User B.
+○​ The Relationship_Type (e.g., Circle 1, 2, or 3) is assigned based on User A’s
+selection.
+○​ Note: This classification is private to User A and does not affect User B’s
+relationship with other users.
+
+4.​ Notification Dispatch: The system sends an SMS (for phone) or Email with a tokenized
+Deep Link.
+
+5. Transition Flow: Converting Prospect to Active
+1.​ Access: User B clicks the Deep Link.
+2.​ Unauthenticated View: User B can view the specific Match or Circle details associated
+with the token (e.g., "Kiran's Saturday Morning Doubles").
+3.​ The "Accept" Action: User B clicks "Accept."
+4.​ Identity Claim: * User B is prompted to enter a Display Name.
+○​ System updates Status from Prospect to Active.
+○​ Activated_At timestamp is recorded.
+5.​ Deferred Authentication: No password or OTP is required at this stage; the unique
+URL token serves as the initial session validator.
+
+6. Business Rules
+●​ Permanent Shadow Profiles: Prospect records do not expire. They act as placeholders
+for future social interactions.
+●​ Attribution: The system must track which user originally "discovered" the prospect (First
+Inviter).
+●​ Privacy: A Prospect's existence is only visible to users who already possess their
+contact information or are part of a shared group.
+
+7. Edge Cases
+●​ Multiple Inviters: If User A and User C both invite User B, User B is still just one
+Prospect record, but has two distinct Connection records (e.g., Circle 1 for A, Circle
+3 for C).
+●​ Information Mismatch: If User A invites via phone and User C invites via email, these
+remain separate Prospect records until the user joins and merges them (handled in a
+later Use Case).
+
+

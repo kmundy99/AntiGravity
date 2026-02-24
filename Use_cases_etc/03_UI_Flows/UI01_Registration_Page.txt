@@ -1,0 +1,45 @@
+UI01_Registration_Page
+Status: Draft | Version: 1.1
+
+1. Page Layout & Components
+●​ Header: "Set Up Your Profile"
+●​ Contact Info Field: Pre-populated (if from deep link) but editable.
+○​ Interaction: If the user edits the number, trigger a background check for an
+existing internal_id associated with the new number.
+●​ Display Name (Mandatory): Required text field. This is the absolute minimum
+requirement to "Accept" a match.
+●​ Gender (Mandatory): Segmented control (Male / Female / Non-Binary). Used for match
+filtering (e.g., Mixed vs. Single-sex doubles).
+●​ NTRP Level: Dropdown or slider (increments of 0.5 from 2.0 to 6.0).
+○​ Tooltip: "What’s my NTRP?" link to a quick reference guide.
+●​ Location Search: Google Places Autocomplete search bar.
+○​ Interaction: User types address; selecting a result displays the formatted string
+and stores coordinates.
+●​ Notification Preferences:
+○​ Toggle: "Receive match invitations" (Default: ON).
+○​ Channel Selector: Segmented control (SMS / Email / Both). Determines how the
+system sends deep links.
+
+2. State-Based Registration Logic (New)
+To solve for the scenario where Person B wants to join a match quickly without a full setup:
+●​ The "Quick Accept" State (Restricted Profile):
+○​ Requirement: User provides Display Name only.
+○​ Privileges: Can "Accept" or "Decline" matches they have been invited to. Can
+participate in match-specific chats.
+○​ Restrictions: Cannot "Organize" a new match. Cannot search for players or
+available matches (as NTRP/Location are missing).
+●​ The "Full" Profile State:
+○​ Requirement: User completes NTRP Level, Gender, and Location.
+○​ Privileges: All features unlocked, including Match Creation, Tiered Filling, and
+Global Search.
+
+3. The Merge Rule Interaction
+
+●​ Trigger: User enters a phone number that is already a "Shadow Profile" under a
+different internal_id.
+●​ Modal Popup: "We found another invite for this number. Would you like to merge your
+circles and matches?"
+●​ Action: If "Yes," the two records are merged under the current session.
+●​
+
+
