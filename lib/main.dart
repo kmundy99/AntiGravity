@@ -19,6 +19,7 @@ import 'screens/players_directory_screen.dart';
 
 import 'screens/match_chat_screen.dart';
 import 'services/notification_service.dart';
+import 'services/match_service.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 
 void main() async {
@@ -364,10 +365,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _filterPlayerCtrl.text.trim().toLowerCase() != 'anyone') {
         final target = _filterPlayerCtrl.text.trim().toLowerCase();
         if (target == 'me') {
-          bool inRoster = roster.any(
-            (r) =>
-                r['uid'] == _myPhone || r['displayName'] == _user?.displayName,
-          );
+          // FIX: Use uid only — no displayName fallback (prevents collision bugs)
+          bool inRoster = roster.any((r) => r['uid'] == _myPhone);
           if (!inRoster && data['organizerId'] != _myPhone) return false;
         } else {
           bool inRoster = roster.any(
@@ -420,9 +419,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = (match['match_date'] as Timestamp).toDate();
 
       final List roster = List.from(match['roster'] ?? []);
-      final bool isJoined = roster.any(
-        (r) => r['uid'] == _myPhone || r['displayName'] == _user?.displayName,
-      );
+      // FIX: Use uid only — no displayName fallback (prevents collision bugs)
+      final bool isJoined = roster.any((r) => r['uid'] == _myPhone);
       final int reqCount = match['requiredCount'] ?? 4;
       final int acceptedCount = roster
           .where((r) => r['status'] == 'accepted')
@@ -631,7 +629,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // View Switcher Row (Sits above the calendar to avoid Schedule View hiding the allowedViews array)
+        // View Switcher Row
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: SegmentedButton<CalendarView>(
@@ -686,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen> {
               appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
             ),
             onTap: (CalendarTapDetails details) {
-              // If they tap an existing match (Appointment), we show the join/details popup
+              // If they tap an existing match (Appointment), show the join/details popup
               if (details.appointments != null &&
                   details.appointments!.isNotEmpty) {
                 final Appointment appt = details.appointments!.first;
@@ -698,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> {
               // If they tapped an empty time-slot, prompt to create a match here
               else if (details.targetElement == CalendarElement.calendarCell) {
                 final DateTime chosenSlot = details.date!;
-                // Only allow scheduling in the future (rough approximation)
+                // Only allow scheduling in the future
                 if (chosenSlot.isAfter(
                   DateTime.now().subtract(const Duration(hours: 1)),
                 )) {
@@ -739,43 +737,66 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ===========================================================================
+  // MATCH DETAILS DIALOG — Phase 1 rewrite: typed models + MatchService
+  // ===========================================================================
   void _showMatchDetailsDialog(String matchId) async {
     final docSnapshot = await FirebaseFirestore.instance
         .collection('matches')
         .doc(matchId)
         .get();
-    if (!docSnapshot.exists) return;
-    final match = docSnapshot.data() as Map<String, dynamic>;
-    final date = (match['match_date'] as Timestamp).toDate();
-    final List roster = List.from(match['roster'] ?? []);
-    Map<String, dynamic>? myRosterEntry;
-    for (var r in roster) {
-      if (r['uid'] == _myPhone ||
-          (r['displayName'] == _user?.displayName &&
-              _user?.displayName != null)) {
+
+    // FIX: Show a proper error for cancelled/missing matches (e.g. via deep link)
+    if (!docSnapshot.exists) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Match Not Found"),
+            content: const Text(
+              "This match may have been cancelled or the link is invalid.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
+    // FIX: Use typed Match model instead of raw Map
+    final match = Match.fromFirestore(docSnapshot);
+    final date = match.matchDate;
+
+    // FIX: Use uid ONLY — no displayName fallback (prevents collision bugs)
+    Roster? myRosterEntry;
+    for (var r in match.roster) {
+      if (r.uid == _myPhone) {
         myRosterEntry = r;
         break;
       }
     }
-    final bool isJoined =
-        myRosterEntry != null && myRosterEntry['status'] == 'accepted';
-    final bool isInvited =
-        myRosterEntry != null && myRosterEntry['status'] == 'invited';
-    final int reqCount = match['requiredCount'] ?? 4;
-    final int acceptedCount = roster
-        .where((r) => r['status'] == 'accepted')
-        .length;
-    final bool isFull = acceptedCount >= reqCount;
-    final bool isOrganizer =
-        match['organizerId'] == _myPhone ||
-        match['organizerId'] == 'host_kiran';
 
-    // Show persistent dialog
+    final bool isJoined =
+        myRosterEntry != null && myRosterEntry.status == RosterStatus.accepted;
+    final bool isInvited =
+        myRosterEntry != null && myRosterEntry.status == RosterStatus.invited;
+    final int acceptedCount = match.roster
+        .where((r) => r.status == RosterStatus.accepted)
+        .length;
+    final bool isFull = acceptedCount >= match.requiredCount;
+    // FIX: Removed hardcoded 'host_kiran' fallback
+    final bool isOrganizer = match.organizerId == _myPhone;
+
     if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("${match['location'] ?? 'Court'}"),
+        title: Text(match.location),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -785,8 +806,8 @@ class _HomeScreenState extends State<HomeScreen> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            Text("Level: ${match['minNtrp']} - ${match['maxNtrp'] ?? 7.0}"),
-            Text("Players: $acceptedCount/$reqCount"),
+            Text("Level: ${match.minNtrp} - ${match.maxNtrp}"),
+            Text("Players: $acceptedCount/${match.requiredCount}"),
             if (acceptedCount > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
@@ -798,90 +819,77 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
-                    ...roster.where((r) => r['status'] == 'accepted').map((r) {
-                      bool isMe =
-                          r['uid'] == _myPhone ||
-                          (r['displayName'] == _user?.displayName &&
-                              _user?.displayName != null);
-                      String cleanName =
-                          (r['displayName'] as String?)?.replaceAll(
+                    // FIX: Use typed Roster objects instead of raw maps
+                    ...match.roster
+                        .where((r) => r.status == RosterStatus.accepted)
+                        .map((r) {
+                          final bool isMe = r.uid == _myPhone;
+                          final bool isOrgPlayer = r.uid == match.organizerId;
+                          final String cleanName = r.displayName.replaceAll(
                             ' (You)',
                             '',
-                          ) ??
-                          'Player';
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2.0),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.check_circle,
-                              size: 16,
-                              color: Colors.green,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                isMe ? "$cleanName (You)" : cleanName,
-                              ),
-                            ),
-                            if (isMe && !isOrganizer)
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 0,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                          );
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: Colors.green,
                                 ),
-                                onPressed: () async {
-                                  // remove logic
-                                  final newRoster =
-                                      List<Map<String, dynamic>>.from(roster);
-                                  newRoster.removeWhere(
-                                    (item) =>
-                                        item['uid'] == r['uid'] ||
-                                        item['displayName'] == r['displayName'],
-                                  );
-                                  await FirebaseFirestore.instance
-                                      .collection('matches')
-                                      .doc(matchId)
-                                      .update({'roster': newRoster});
-
-                                  final matchObj = Match.fromFirestore(
-                                    docSnapshot,
-                                  );
-
-                                  await NotificationService.notifyOrganizerDropOut(
-                                    match: matchObj,
-                                    matchId: matchId,
-                                    playerName: cleanName,
-                                  );
-
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          "You have been removed from the match.",
-                                        ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    isMe ? "$cleanName (You)" : cleanName,
+                                  ),
+                                ),
+                                // FIX: "Remove Me" now uses MatchService.removeMe()
+                                if (isMe && !isOrgPlayer)
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 0,
                                       ),
-                                    );
-                                  }
-                                },
-                                child: const Text(
-                                  "Remove Me",
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 12,
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () async {
+                                      await MatchService.removeMe(
+                                        matchId: matchId,
+                                        playerUid: _myPhone!,
+                                        playerDisplayName:
+                                            _user?.displayName ?? 'Player',
+                                      );
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "You have been removed from the match.",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text(
+                                      "Remove Me",
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                              ],
+                            ),
+                          );
+                        })
+                        .toList(),
                   ],
                 ),
               ),
@@ -959,23 +967,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+          // FIX: Accept/Decline now use MatchService methods
           if (isInvited)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
                   onPressed: () async {
-                    final newRoster = List<Map<String, dynamic>>.from(roster);
-                    newRoster.removeWhere(
-                      (r) =>
-                          r['uid'] == _myPhone ||
-                          r['displayName'] == _user?.displayName,
+                    // FIX: Sets status to 'declined' instead of deleting entry
+                    await MatchService.declineInvite(
+                      matchId: matchId,
+                      playerUid: _myPhone!,
                     );
-                    await FirebaseFirestore.instance
-                        .collection('matches')
-                        .doc(matchId)
-                        .update({'roster': newRoster});
-                    Navigator.pop(context);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
                   },
                   child: const Text("Decline"),
                 ),
@@ -986,28 +992,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
-                    final newRoster = List<Map<String, dynamic>>.from(roster);
-                    final index = newRoster.indexWhere(
-                      (r) =>
-                          r['uid'] == _myPhone ||
-                          r['displayName'] == _user?.displayName,
+                    // FIX: Uses typed MatchService with capacity check
+                    final success = await MatchService.acceptInvite(
+                      matchId: matchId,
+                      playerUid: _myPhone!,
                     );
-                    if (index != -1) {
-                      newRoster[index]['status'] = 'accepted';
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? "Invite Accepted!"
+                                : "Match is full — couldn't accept.",
+                          ),
+                        ),
+                      );
                     }
-                    await FirebaseFirestore.instance
-                        .collection('matches')
-                        .doc(matchId)
-                        .update({'roster': newRoster});
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Invite Accepted!")),
-                    );
                   },
                   child: const Text("Accept Invite"),
                 ),
               ],
             ),
+          // FIX: Join now uses MatchService with waitlist support
           if (!isJoined && !isInvited && !isFull)
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1015,19 +1022,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
-                roster.add({
-                  'displayName': _user?.displayName ?? 'Player',
-                  'status': 'accepted',
-                  'uid': _myPhone,
-                });
-                await FirebaseFirestore.instance
-                    .collection('matches')
-                    .doc(matchId)
-                    .update({'roster': roster});
-                Navigator.pop(context);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text("Joined Match!")));
+                final result = await MatchService.joinMatch(
+                  matchId: matchId,
+                  playerUid: _myPhone!,
+                  playerDisplayName: _user?.displayName ?? 'Player',
+                  playerNtrpLevel: _user?.ntrpLevel,
+                );
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  final message = switch (result) {
+                    JoinResult.accepted => "Joined Match!",
+                    JoinResult.waitlisted =>
+                      "Match is full — you've been added to the waitlist.",
+                    JoinResult.full => "Match is completely full.",
+                    JoinResult.alreadyInRoster =>
+                      "You're already in this match.",
+                    JoinResult.error => "Something went wrong.",
+                  };
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(message)));
+                }
               },
               child: const Text("Join Match"),
             ),
@@ -1073,10 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
 
                   final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString(
-                    'user_phone',
-                    loginId,
-                  ); // Store under 'user_phone' for backwards compatibility
+                  await prefs.setString('user_phone', loginId);
                   _loadUser();
                 },
                 style: ElevatedButton.styleFrom(

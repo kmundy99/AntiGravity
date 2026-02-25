@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../models.dart';
-import '../create_match.dart'; // Ensure CreateMatchScreen accepts initial data for cloning
+import '../create_match.dart';
 
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
@@ -9,12 +10,19 @@ class HistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
+      // FIX: Query by date instead of status == 'Completed'
+      // Nothing in the app ever sets status to 'Completed', so the old query
+      // always returned zero results. Instead, show matches whose date has passed.
       stream: FirebaseFirestore.instance
           .collection('matches')
           .where(
-            'status',
-            isEqualTo: 'Completed',
-          ) // Assumes a weekly job marks them Completed
+            'match_date',
+            isLessThan: Timestamp.fromDate(
+              DateTime.now().subtract(const Duration(hours: 2)),
+            ),
+          )
+          .orderBy('match_date', descending: true)
+          .limit(50) // Reasonable cap to avoid loading thousands of old matches
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -28,20 +36,15 @@ class HistoryScreen extends StatelessWidget {
           return const Center(child: Text("No past matches. Go play!"));
         }
 
-        // Sort descending in memory to avoid requiring Firestore composite indexes
-        docs.sort((a, b) {
-          final timeA =
-              (a['match_date'] as Timestamp?)?.toDate() ?? DateTime(0);
-          final timeB =
-              (b['match_date'] as Timestamp?)?.toDate() ?? DateTime(0);
-          return timeB.compareTo(timeA);
-        });
-
         return ListView.builder(
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final doc = docs[index];
             final match = Match.fromFirestore(doc);
+            final dateStr = DateFormat('M/d/yyyy').format(match.matchDate);
+            final acceptedCount = match.roster
+                .where((r) => r.status == RosterStatus.accepted)
+                .length;
 
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -50,24 +53,34 @@ class HistoryScreen extends StatelessWidget {
                   match.location,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text(
-                  "${match.matchDate.toString().split(' ')[0]} | Players: ${match.roster.where((r) => r.status == RosterStatus.accepted).length}",
-                ),
+                subtitle: Text("$dateStr | Players: $acceptedCount"),
+                // FIX: Rematch button now passes location + previous player UIDs
                 trailing: ElevatedButton(
                   onPressed: () {
-                    // Navigate to CreateMatchScreen with cloned data
+                    // Collect UIDs of previously accepted players (excluding organizer)
+                    final previousPlayerUids = match.roster
+                        .where(
+                          (r) =>
+                              r.status == RosterStatus.accepted &&
+                              r.uid != match.organizerId,
+                        )
+                        .map((r) => r.uid)
+                        .toList();
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            const CreateMatchScreen(), // Assume this handles cloning later
+                        builder: (context) => CreateMatchScreen(
+                          prefillLocation: match.location,
+                          prefillPlayerUids: previousPlayerUids,
+                        ),
                       ),
                     );
                   },
                   child: const Text("Rematch"),
                 ),
                 onTap: () {
-                  // Navigate to Read-Only Chat or History Detail
+                  // TODO: Navigate to Read-Only Chat or History Detail
                 },
               ),
             );

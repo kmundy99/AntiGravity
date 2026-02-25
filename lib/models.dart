@@ -182,6 +182,8 @@ class Roster {
       'displayName': displayName,
       'status': status.toString().split('.').last,
       'waitlist_timestamp': waitlistTimestamp,
+      // FIX: ntrpLevel was previously omitted, causing silent data loss
+      if (ntrpLevel != null) 'ntrpLevel': ntrpLevel,
     };
   }
 }

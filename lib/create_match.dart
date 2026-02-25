@@ -13,7 +13,16 @@ import 'services/match_service.dart';
 
 class CreateMatchScreen extends StatefulWidget {
   final DateTime? prefillDate;
-  const CreateMatchScreen({super.key, this.prefillDate});
+  // FIX: New params for Rematch flow (from HistoryScreen)
+  final String? prefillLocation;
+  final List<String>? prefillPlayerUids;
+
+  const CreateMatchScreen({
+    super.key,
+    this.prefillDate,
+    this.prefillLocation,
+    this.prefillPlayerUids,
+  });
 
   @override
   State<CreateMatchScreen> createState() => _CreateMatchScreenState();
@@ -44,6 +53,10 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         widget.prefillDate!.add(const Duration(hours: 1, minutes: 30)),
       );
     }
+    // FIX: Pre-fill location from Rematch
+    if (widget.prefillLocation != null) {
+      _selectedAddress = widget.prefillLocation!;
+    }
     _loadUser();
   }
 
@@ -67,6 +80,36 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
           _currentUserPhone = phone;
         });
       }
+    }
+
+    // FIX: Load previous players for Rematch flow
+    if (widget.prefillPlayerUids != null &&
+        widget.prefillPlayerUids!.isNotEmpty) {
+      await _loadRematchPlayers(widget.prefillPlayerUids!);
+    }
+  }
+
+  /// Loads User objects from Firestore for the Rematch pre-fill.
+  Future<void> _loadRematchPlayers(List<String> uids) async {
+    final users = <User>[];
+    for (final uid in uids) {
+      if (uid.isEmpty) continue;
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        if (doc.exists) {
+          users.add(User.fromFirestore(doc));
+        }
+      } catch (_) {
+        // Skip users that can't be loaded
+      }
+    }
+    if (mounted && users.isNotEmpty) {
+      setState(() {
+        _selectedRecruits.addAll(users);
+      });
     }
   }
 
@@ -118,6 +161,10 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             builder: (context, controller, focusNode) {
               _addressController =
                   controller; // Capture controller for onSelected
+              // FIX: Pre-fill address field for Rematch
+              if (_selectedAddress.isNotEmpty && controller.text.isEmpty) {
+                controller.text = _selectedAddress;
+              }
 
               return TextField(
                 controller: controller,

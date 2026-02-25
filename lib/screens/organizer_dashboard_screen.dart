@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models.dart';
@@ -18,6 +19,8 @@ class OrganizerDashboardScreen extends StatefulWidget {
 
 class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
   Match? _match;
+  // FIX: Store the stream subscription so we can cancel it in dispose()
+  StreamSubscription<DocumentSnapshot>? _matchSub;
 
   @override
   void initState() {
@@ -25,12 +28,20 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
     _loadMatch();
   }
 
+  // FIX: Prevent memory leak / "setState after dispose" crash
+  @override
+  void dispose() {
+    _matchSub?.cancel();
+    super.dispose();
+  }
+
   void _loadMatch() {
-    FirebaseFirestore.instance
+    _matchSub = FirebaseFirestore.instance
         .collection('matches')
         .doc(widget.matchId)
         .snapshots()
         .listen((doc) {
+          if (!mounted) return;
           if (doc.exists) {
             setState(() {
               _match = Match.fromFirestore(doc);
@@ -67,10 +78,9 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                       .update({
                         'roster': newRoster.map((e) => e.toMap()).toList(),
                       });
-                  // Send notification with reasonCtrl.text
+                  // FIX: Removed shadow_ check — all users now have real docs
                   if (player.status == RosterStatus.accepted &&
-                      player.uid.isNotEmpty &&
-                      !player.uid.startsWith('shadow_')) {
+                      player.uid.isNotEmpty) {
                     final orgName = _match!.roster
                         .firstWhere(
                           (r) => r.uid == _match!.organizerId,
@@ -82,7 +92,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                         )
                         .displayName;
 
-                    NotificationService.sendRemoval(
+                    await NotificationService.sendRemoval(
                       contact: player.uid,
                       match: _match!,
                       organizerName: orgName,
@@ -91,7 +101,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     );
                   }
                 }
-                Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -221,7 +231,9 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Text(
-                "Location: ${_match!.location}\nTime: ${_match!.matchDate}\nTier: ${_match!.currentTier}",
+                "Location: ${_match!.location}\n"
+                "Time: ${NotificationService.formatDateTime(Match(organizerId: '', location: '', matchDate: _match!.matchDate, status: MatchStatus.Filling, roster: []))}\n"
+                "Tier: ${_match!.currentTier}",
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.edit),
