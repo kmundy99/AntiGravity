@@ -4,10 +4,9 @@ import '../models.dart';
 
 class NotificationService {
   // ===========================================================================
-  // SHARED HELPERS — single source of truth for send, formatting, naming
+  // SHARED HELPERS
   // ===========================================================================
 
-  /// Sends an SMS notification via the Twilio trigger collection.
   static Future<void> _sendSms({
     required String phone,
     required String textBody,
@@ -18,7 +17,6 @@ class NotificationService {
     });
   }
 
-  /// Sends an Email notification via the SendGrid trigger collection.
   static Future<void> _sendEmail({
     required String email,
     required String subject,
@@ -31,19 +29,11 @@ class NotificationService {
     });
   }
 
-  /// Looks up a user's notification preferences from Firestore and sends
-  /// the message via their preferred channel(s).
+  /// Looks up a user by their Firestore UUID, resolves their notification
+  /// preferences and contact info, and sends the message via the appropriate
+  /// channel(s).
   ///
-  /// [uid] is the user's Firestore doc ID (their primaryContact — phone or email).
-  ///
-  /// Resolution logic:
-  ///  1. Fetch the user doc to get notifMode, email, and primaryContact.
-  ///  2. Determine available channels:
-  ///     - Phone: primaryContact if it doesn't contain '@'
-  ///     - Email: the 'email' field if set, OR primaryContact if it contains '@'
-  ///  3. Send via the user's preferred channel(s). If the preferred channel
-  ///     isn't available, fall back to whatever IS available.
-  ///  4. For shadow profiles or missing docs, fall back to guessing from uid.
+  /// [uid] is the user's Firestore doc ID (UUID).
   static Future<void> _send({
     required String uid,
     required String subject,
@@ -52,9 +42,9 @@ class NotificationService {
   }) async {
     String? phone;
     String? email;
-    String notifMode = uid.contains('@') ? 'Email' : 'SMS'; // default guess
+    String notifMode = 'SMS'; // default guess
 
-    // Look up user preferences
+    // Look up user preferences by UUID
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
@@ -65,11 +55,11 @@ class NotificationService {
         final data = doc.data() as Map<String, dynamic>;
         notifMode = data['notif_mode'] ?? notifMode;
 
-        final primaryContact = data['primary_contact'] ?? uid;
+        final primaryContact = data['primary_contact'] ?? '';
         final storedEmail = data['email'] ?? '';
 
         // Determine available phone number
-        if (!primaryContact.contains('@')) {
+        if (primaryContact.isNotEmpty && !primaryContact.contains('@')) {
           phone = primaryContact;
         }
 
@@ -79,14 +69,18 @@ class NotificationService {
         } else if (primaryContact.contains('@')) {
           email = primaryContact;
         }
+
+        // Update default guess based on what we found
+        if (phone == null && email != null) {
+          notifMode = data['notif_mode'] ?? 'Email';
+        }
       }
     } catch (_) {
       // Firestore lookup failed — fall through to defaults below
     }
 
-    // If we couldn't determine channels from the doc, infer from uid
-    phone ??= uid.contains('@') ? null : uid;
-    email ??= uid.contains('@') ? uid : null;
+    // If we couldn't determine channels from the doc, we can't send
+    if (phone == null && email == null) return;
 
     // Send via preferred channel(s), falling back if preferred isn't available
     switch (notifMode) {
@@ -94,7 +88,6 @@ class NotificationService {
         if (phone != null) {
           await _sendSms(phone: phone, textBody: textBody);
         } else if (email != null) {
-          // Prefers SMS but no phone on file — fall back to email
           await _sendEmail(
             email: email,
             subject: subject,
@@ -112,7 +105,6 @@ class NotificationService {
             htmlBody: htmlBody,
           );
         } else if (phone != null) {
-          // Prefers email but no email on file — fall back to SMS
           await _sendSms(phone: phone, textBody: textBody);
         }
         break;
@@ -136,7 +128,6 @@ class NotificationService {
         }
         break;
       default:
-        // Unknown mode — send to whatever we have
         if (phone != null) {
           await _sendSms(phone: phone, textBody: textBody);
         } else if (email != null) {
@@ -150,22 +141,19 @@ class NotificationService {
     }
   }
 
-  /// Formats a match date as "6/15/2026 at 9:00 AM".
   static String formatDateTime(Match match) {
     final df = DateFormat('M/d/yyyy');
     final tf = DateFormat('h:mm a');
     return '${df.format(match.matchDate)} at ${tf.format(match.matchDate)}';
   }
 
-  /// Returns just the date portion, e.g. "6/15/2026".
   static String _formatDate(Match match) {
     return DateFormat('M/d/yyyy').format(match.matchDate);
   }
 
-  /// Strips the UI suffix " (You)" from display names before sending externally.
   static String cleanName(String name) => name.replaceAll(' (You)', '');
 
-  /// Builds the standard deep link for a match, optionally with a uid for auto-login.
+  /// Builds the standard deep link for a match, optionally with a uid (UUID) for auto-login.
   static String _matchLink(String matchId, {String? uid}) {
     final base = 'https://www.finapps.com/#/match/$matchId';
     if (uid != null && uid.isNotEmpty) {
@@ -174,17 +162,16 @@ class NotificationService {
     return base;
   }
 
-  /// Standard HTML button style used across all notification emails.
   static String _htmlButton(String href, String label) {
     return '<a href="$href" style="padding: 10px 20px; background-color: #0b224e; '
         'color: white; text-decoration: none; border-radius: 5px;">$label</a>';
   }
 
   // ===========================================================================
-  // PUBLIC METHODS — all callers remain unchanged
+  // PUBLIC METHODS
   // ===========================================================================
 
-  /// Sends a match invitation to a single player (SMS or Email).
+  /// Sends a match invitation. [contact] is the player's UUID.
   static Future<void> sendInvite({
     required String contact,
     required Match match,
@@ -229,7 +216,6 @@ class NotificationService {
     );
   }
 
-  /// Notifies a player that they have been removed from a match by the organizer.
   static Future<void> sendRemoval({
     required String contact,
     required Match match,
@@ -267,8 +253,6 @@ class NotificationService {
     );
   }
 
-  /// Notifies the match organizer that a player has dropped out.
-  /// Accepts an optional [note] so the player can explain why they're leaving.
   static Future<void> notifyOrganizerDropOut({
     required Match match,
     required String matchId,
@@ -312,7 +296,6 @@ class NotificationService {
     );
   }
 
-  /// Sends an urgent recruitment alert that bypasses notification preferences.
   static Future<void> sendUrgentRecruit({
     required String contact,
     required String matchId,
@@ -335,7 +318,6 @@ class NotificationService {
     );
   }
 
-  /// Sends cancellation notices to all accepted/invited players in a match.
   static Future<void> sendMatchCancellation({
     required List<Roster> roster,
     required Match match,
@@ -363,7 +345,6 @@ class NotificationService {
     final futures = <Future>[];
 
     for (final player in roster) {
-      // Skip the organizer themselves and empty uids
       if (player.uid == match.organizerId || player.uid.isEmpty) continue;
 
       if (player.status == RosterStatus.accepted ||
@@ -382,7 +363,6 @@ class NotificationService {
     await Future.wait(futures, eagerError: false);
   }
 
-  /// Sends a generic match update message to a single contact.
   static Future<void> sendMatchUpdate({
     required String contact,
     required String message,
@@ -395,7 +375,6 @@ class NotificationService {
     );
   }
 
-  /// Sends a chat notification to a single player when someone posts in match chat.
   static Future<void> sendChatNotification({
     required String contact,
     required String matchId,

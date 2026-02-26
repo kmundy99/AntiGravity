@@ -19,7 +19,6 @@ class OrganizerDashboardScreen extends StatefulWidget {
 
 class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
   Match? _match;
-  // FIX: Store the stream subscription so we can cancel it in dispose()
   StreamSubscription<DocumentSnapshot>? _matchSub;
 
   @override
@@ -28,7 +27,6 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
     _loadMatch();
   }
 
-  // FIX: Prevent memory leak / "setState after dispose" crash
   @override
   void dispose() {
     _matchSub?.cancel();
@@ -78,7 +76,6 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                       .update({
                         'roster': newRoster.map((e) => e.toMap()).toList(),
                       });
-                  // FIX: Removed shadow_ check — all users now have real docs
                   if (player.status == RosterStatus.accepted &&
                       player.uid.isNotEmpty) {
                     final orgName = _match!.roster
@@ -93,10 +90,10 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                         .displayName;
 
                     await NotificationService.sendRemoval(
-                      contact: player.uid,
+                      contact: player.uid, // UUID
                       match: _match!,
                       organizerName: orgName,
-                      isSms: !player.uid.contains('@'),
+                      isSms: false, // _send() handles routing
                       reason: reasonCtrl.text,
                     );
                   }
@@ -148,7 +145,6 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                       )
                       .displayName;
 
-                  // 1. Send cancellation emails/SMS
                   await NotificationService.sendMatchCancellation(
                     roster: _match!.roster,
                     match: _match!,
@@ -156,15 +152,14 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     reason: reasonCtrl.text,
                   );
 
-                  // 2. Delete document from Firestore
                   await FirebaseFirestore.instance
                       .collection('matches')
                       .doc(widget.matchId)
                       .delete();
 
                   if (context.mounted) {
-                    Navigator.pop(context); // Close dialog
-                    Navigator.pop(context); // Go back home
+                    Navigator.pop(context);
+                    Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text("Match permanently canceled."),
@@ -286,7 +281,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     MaterialPageRoute(
                       builder: (context) => MatchChatScreen(
                         matchId: widget.matchId,
-                        currentUserId: _match!.organizerId,
+                        currentUserId: _match!.organizerId, // UUID
                         currentUserName: orgName,
                       ),
                     ),
@@ -302,7 +297,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (context) => SelectPlayersScreen(
-                        currentUserPhone: _match!.organizerId,
+                        currentUserUid: _match!.organizerId, // UUID
                         alreadyInRosterUids: _match!.roster
                             .map((r) => r.uid)
                             .toList(),

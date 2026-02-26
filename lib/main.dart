@@ -77,17 +77,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String? _myPhone;
+  /// The current user's Firestore document ID (UUID). Replaces old `_myPhone`.
+  String? _myUid;
   User? _user;
   bool _isEditingProfile = false;
   bool _isQuickSetup = false;
   final _phoneCtrl = TextEditingController();
   int _selectedIndex = 0;
 
-  // Controllers for the 8 Spec Fields
+  // Controllers for the 9 Spec Fields
   final _nameCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _phoneFormCtrl = TextEditingController();
   String _gender = 'Other';
   double _ntrp = 3.5;
   bool _notifOn = true;
@@ -100,10 +102,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _filterPlayerCtrl = TextEditingController(
     text: 'Anyone',
   );
-  int? _filterSpotsLeft; // null means 'Any', otherwise '>= X'
-  double? _filterMinNtrpMatch; // null means 'Any'
-  int? _filterIncludesCircle; // null = Any, 1, 2, 3
-  int? _filterCirclePlayerCount; // null = Any
+  int? _filterSpotsLeft;
+  double? _filterMinNtrpMatch;
+  int? _filterIncludesCircle;
+  int? _filterCirclePlayerCount;
   CalendarView _currentCalendarView = CalendarView.month;
 
   List<QueryDocumentSnapshot> _allMatches = [];
@@ -117,8 +119,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _calendarDataSource = _MeetingDataSource(<Appointment>[]);
     _loadUser();
-
-    // FIX: Removed DEBUG feedback log block (was printing user data to console)
 
     _matchesSub = FirebaseFirestore.instance
         .collection('matches')
@@ -162,33 +162,74 @@ class _HomeScreenState extends State<HomeScreen> {
     _nameCtrl.dispose();
     _addressCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneFormCtrl.dispose();
     _filterPlayerCtrl.dispose();
     _calendarController.dispose();
     super.dispose();
   }
 
+  // ===========================================================================
+  // LOGIN & USER LOADING — now resolves contact → UUID
+  // ===========================================================================
+
+  /// Looks up a user by their phone or email and returns the Firestore doc ID (UUID).
+  /// Returns null if no matching user is found.
+  Future<String?> _resolveContactToUid(String normalizedContact) async {
+    // 1. Try primary_contact field
+    var query = await FirebaseFirestore.instance
+        .collection('users')
+        .where('primary_contact', isEqualTo: normalizedContact)
+        .limit(1)
+        .get();
+
+    if (query.docs.isNotEmpty) return query.docs.first.id;
+
+    // 2. Try email field
+    if (normalizedContact.contains('@')) {
+      query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: normalizedContact)
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) return query.docs.first.id;
+    }
+
+    // 3. Legacy support: check if a doc exists with the contact as its ID
+    //    (for pre-migration users whose doc ID IS their phone/email)
+    final legacyDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(normalizedContact)
+        .get();
+
+    if (legacyDoc.exists) return legacyDoc.id;
+
+    return null;
+  }
+
   void _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Auto-login via Deep Link
+    // Auto-login via Deep Link — uid param is now a UUID
     if (widget.initialUid != null && widget.initialUid!.isNotEmpty) {
-      await prefs.setString('user_phone', widget.initialUid!);
+      await prefs.setString('user_uid', widget.initialUid!);
     }
 
-    final phone = prefs.getString('user_phone');
-    if (phone != null) {
+    final storedUid = prefs.getString('user_uid');
+    if (storedUid != null) {
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(phone)
+          .doc(storedUid)
           .get();
       if (doc.exists) {
         final user = User.fromFirestore(doc);
         setState(() {
-          _myPhone = phone;
+          _myUid = storedUid;
           _user = user;
           _nameCtrl.text = _user?.displayName ?? "";
           _addressCtrl.text = _user?.address ?? "";
           _emailCtrl.text = _user?.email ?? "";
+          _phoneFormCtrl.text = _user?.phoneNumber ?? "";
           _gender =
               ['Male', 'Female', 'Non-Binary', 'Other'].contains(user.gender)
               ? user.gender
@@ -211,30 +252,29 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         }
       } else {
+        // Stored UID points to a deleted doc — clear it and show login
+        await prefs.remove('user_uid');
         setState(() {
-          _myPhone = phone;
-          _isEditingProfile = widget.initialMatchId == null;
+          _myUid = null;
         });
-
-        if (widget.initialMatchId != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showMatchDetailsDialog(widget.initialMatchId!);
-          });
-        }
       }
     }
   }
 
   void _saveProfile() async {
-    if (_myPhone == null) return;
+    if (_myUid == null) return;
+
+    final contactValue = _user?.primaryContact ?? _phoneCtrl.text.trim();
 
     final newUser = User(
+      uid: _myUid!,
       displayName: _nameCtrl.text,
-      primaryContact: _myPhone!,
+      primaryContact: contactValue,
       ntrpLevel: _isQuickSetup ? 0.0 : _ntrp,
       gender: _isQuickSetup ? 'Other' : _gender,
       address: _isQuickSetup ? '' : _addressCtrl.text,
       email: _isQuickSetup ? '' : _emailCtrl.text,
+      phoneNumber: _isQuickSetup ? '' : _phoneFormCtrl.text,
       notifActive: _isQuickSetup ? false : _notifOn,
       notifMode: _isQuickSetup ? 'SMS' : _notifMode,
       accountStatus: _isQuickSetup
@@ -246,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await FirebaseFirestore.instance
         .collection('users')
-        .doc(_myPhone)
+        .doc(_myUid)
         .set(newUser.toFirestore(), SetOptions(merge: true));
 
     setState(() => _isEditingProfile = false);
@@ -265,9 +305,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // =========================================================================
-  // Google Places Autocomplete — Places API (New) with unrestricted key
-  // =========================================================================
   Future<List<String>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
 
@@ -297,7 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_myPhone == null) return _buildLogin();
+    if (_myUid == null) return _buildLogin();
     if (_isEditingProfile) return _buildProfileEditor();
 
     return Scaffold(
@@ -326,9 +363,9 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               final prefs = await SharedPreferences.getInstance();
-              await prefs.remove('user_phone');
+              await prefs.remove('user_uid');
               setState(() {
-                _myPhone = null;
+                _myUid = null;
                 _user = null;
                 _isEditingProfile = false;
                 _isQuickSetup = false;
@@ -344,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () {
           final tabs = ["Upcoming", "Players", "History"];
           final currentTab = tabs[_selectedIndex];
-          showFeedbackModal(context, _myPhone, _user?.displayName, currentTab);
+          showFeedbackModal(context, _myUid, _user?.displayName, currentTab);
         },
         backgroundColor: Colors.amber.shade300,
         foregroundColor: Colors.black87,
@@ -372,7 +409,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return _buildUpcomingMatches();
       case 1:
         return PlayersDirectoryScreen(
-          currentUserPhone: _myPhone ?? '',
+          currentUserUid: _myUid ?? '',
           onEditProfile: () {
             setState(() {
               _selectedIndex = 0;
@@ -388,7 +425,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _refreshCalendarData() {
-    // Apply advanced filters
     var filteredDocs = _allMatches.where((doc) {
       final data = doc.data() as Map<String, dynamic>;
       final roster = List.from(data['roster'] ?? []);
@@ -398,11 +434,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _filterPlayerCtrl.text.trim().toLowerCase() != 'anyone') {
         final target = _filterPlayerCtrl.text.trim().toLowerCase();
         if (target == 'me') {
-          // FIX: Use uid only — no displayName fallback (prevents collision bugs)
-          bool inRoster = roster.any((r) => r['uid'] == _myPhone);
-          if (!inRoster && data['organizerId'] != _myPhone) return false;
+          bool inRoster = roster.any((r) => r['uid'] == _myUid);
+          if (!inRoster && data['organizerId'] != _myUid) return false;
         } else {
-          // FIX: Match exact name to avoid collisions (e.g., "statements") and ensure they are accepted
           bool inRoster = roster.any(
             (r) =>
                 (r['displayName']?.toString().toLowerCase() ?? '') == target &&
@@ -434,9 +468,8 @@ class _HomeScreenState extends State<HomeScreen> {
         int circleCount = 0;
         for (var r in roster) {
           final uid = r['uid'];
-          // FIX: Exclude the current user from the circle count and ensure the player is accepted
           if (uid != null &&
-              uid != _myPhone &&
+              uid != _myUid &&
               r['status'] == 'accepted' &&
               _user!.circleRatings[uid] == _filterIncludesCircle) {
             circleCount++;
@@ -445,10 +478,9 @@ class _HomeScreenState extends State<HomeScreen> {
         if (circleCount < _filterCirclePlayerCount!) return false;
       }
 
-      return true; // Passed all filters
+      return true;
     }).toList();
 
-    // Build Custom Event Data Source for SfCalendar
     final List<Appointment> fetchedAppointments = [];
     for (var doc in filteredDocs) {
       final match = doc.data() as Map<String, dynamic>;
@@ -456,11 +488,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = (match['match_date'] as Timestamp).toDate();
 
       final List roster = List.from(match['roster'] ?? []);
-      // FIX: Use UID only
       final bool isJoined = roster.any(
-        (r) => r['uid'] == _myPhone && r['status'] == 'accepted',
+        (r) => r['uid'] == _myUid && r['status'] == 'accepted',
       );
-      final bool isOrganizer = match['organizerId'] == _myPhone;
+      final bool isOrganizer = match['organizerId'] == _myUid;
 
       final int reqCount = match['requiredCount'] ?? 4;
       final int acceptedCount = roster
@@ -469,12 +500,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final int spotsOpen = reqCount - acceptedCount;
       final bool isFull = spotsOpen <= 0;
 
-      // Color Scheme Logic:
-      // 1. Organizer (Full) => Dark Blue
-      // 2. Organizer (Needs Players) => Light Blue
-      // 3. Signed Up (Needs Players) => Green
-      // 4. Eligible to Join (Open Spots, Not Joined, Not Org) => Amber
-      // 5. Match Full (Not Joined, Not Org) => Red (Greyed out conceptually, but keeping Red for visibility of 'Full' matches)
       Color matchColor;
       if (isOrganizer) {
         matchColor = isFull ? Colors.blue.shade900 : Colors.blue.shade400;
@@ -494,7 +519,7 @@ class _HomeScreenState extends State<HomeScreen> {
               "${match['location'] ?? 'Court'} (${isFull ? 'Full' : '$spotsOpen Spots'})",
           color: matchColor,
           id: doc.id,
-          notes: doc.id, // Store the doc ID for routing
+          notes: doc.id,
         ),
       );
     }
@@ -507,12 +532,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (currentVal != 'Anyone' &&
         currentVal != 'Me' &&
         !_allUsers.contains(currentVal)) {
-      currentVal = 'Anyone'; // Safe fallback
+      currentVal = 'Anyone';
     }
 
     return Column(
       children: [
-        // Advanced Filters Panel
         ExpansionTile(
           title: const Text(
             "Advanced Filters",
@@ -649,7 +673,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
 
-        // Color Key Legend
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Wrap(
@@ -706,7 +729,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // View Switcher Row
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: SegmentedButton<CalendarView>(
@@ -729,7 +751,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // Match Counter Ribbon
         Container(
           width: double.infinity,
           color: Colors.grey.shade200,
@@ -744,7 +765,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // Syncfusion Full-Screen Calendar
         Expanded(
           child: SfCalendar(
             view: _currentCalendarView,
@@ -761,7 +781,6 @@ class _HomeScreenState extends State<HomeScreen> {
               appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
             ),
             onTap: (CalendarTapDetails details) {
-              // If they tap an existing match (Appointment), show the join/details popup
               if (details.appointments != null &&
                   details.appointments!.isNotEmpty) {
                 final Appointment appt = details.appointments!.first;
@@ -769,11 +788,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (docId != null) {
                   _showMatchDetailsDialog(docId);
                 }
-              }
-              // If they tapped an empty time-slot, prompt to create a match here
-              else if (details.targetElement == CalendarElement.calendarCell) {
+              } else if (details.targetElement ==
+                  CalendarElement.calendarCell) {
                 final DateTime chosenSlot = details.date!;
-                // Only allow scheduling in the future
                 if (chosenSlot.isAfter(
                   DateTime.now().subtract(const Duration(hours: 1)),
                 )) {
@@ -815,7 +832,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ===========================================================================
-  // MATCH DETAILS DIALOG — Phase 1 rewrite: typed models + MatchService
+  // MATCH DETAILS DIALOG
   // ===========================================================================
   void _showMatchDetailsDialog(String matchId) async {
     final docSnapshot = await FirebaseFirestore.instance
@@ -823,7 +840,6 @@ class _HomeScreenState extends State<HomeScreen> {
         .doc(matchId)
         .get();
 
-    // FIX: Show a proper error for cancelled/missing matches (e.g. via deep link)
     if (!docSnapshot.exists) {
       if (mounted) {
         showDialog(
@@ -845,14 +861,12 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // FIX: Use typed Match model instead of raw Map
     final match = Match.fromFirestore(docSnapshot);
     final date = match.matchDate;
 
-    // FIX: Use uid ONLY — no displayName fallback (prevents collision bugs)
     Roster? myRosterEntry;
     for (var r in match.roster) {
-      if (r.uid == _myPhone) {
+      if (r.uid == _myUid) {
         myRosterEntry = r;
         break;
       }
@@ -868,13 +882,9 @@ class _HomeScreenState extends State<HomeScreen> {
         .where((r) => r.status == RosterStatus.accepted)
         .length;
     final bool isFull = acceptedCount >= reqCount;
-
-    // FIX: Match Full Logic
-    // If you are invited but the match is already full, you cannot accept anymore.
     final bool canAccept = isInvited && !isFull;
 
-    // FIX: Removed hardcoded 'host_kiran' fallback
-    final bool isOrganizer = match.organizerId == _myPhone;
+    final bool isOrganizer = match.organizerId == _myUid;
 
     if (!mounted) return;
     showDialog(
@@ -903,124 +913,119 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
-                    // FIX: Use typed Roster objects instead of raw maps
-                    ...match.roster.where((r) => r.status == RosterStatus.accepted).map((
-                      r,
-                    ) {
-                      final bool isMe = r.uid == _myPhone;
-                      final bool isOrgPlayer = r.uid == match.organizerId;
-                      final String cleanName = r.displayName.replaceAll(
-                        ' (You)',
-                        '',
-                      );
+                    ...match.roster
+                        .where((r) => r.status == RosterStatus.accepted)
+                        .map((r) {
+                          final bool isMe = r.uid == _myUid;
+                          final bool isOrgPlayer = r.uid == match.organizerId;
+                          final String cleanName = r.displayName.replaceAll(
+                            ' (You)',
+                            '',
+                          );
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2.0),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.check_circle,
-                              size: 16,
-                              color: Colors.green,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                isMe ? "$cleanName (You)" : cleanName,
-                              ),
-                            ),
-                            // FIX: "Remove Me" now shows a dialog to collect a note
-                            if (isMe && !isOrgPlayer)
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 0,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: Colors.green,
                                 ),
-                                onPressed: () {
-                                  // Show "Leave Match" dialog with note field
-                                  final noteCtrl = TextEditingController();
-                                  showDialog(
-                                    context: context,
-                                    builder: (dialogContext) => AlertDialog(
-                                      title: const Text("Leave Match"),
-                                      content: TextField(
-                                        controller: noteCtrl,
-                                        decoration: const InputDecoration(
-                                          labelText:
-                                              "Note for organizer (optional)",
-                                          hintText:
-                                              "e.g. Sorry, schedule conflict",
-                                        ),
-                                        autofocus: true,
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    isMe ? "$cleanName (You)" : cleanName,
+                                  ),
+                                ),
+                                if (isMe && !isOrgPlayer)
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 0,
                                       ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(dialogContext),
-                                          child: const Text("Cancel"),
-                                        ),
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.red,
-                                            foregroundColor: Colors.white,
-                                          ),
-                                          onPressed: () async {
-                                            final note = noteCtrl.text.trim();
-
-                                            await MatchService.removeMe(
-                                              matchId: matchId,
-                                              playerUid: _myPhone!,
-                                              playerDisplayName:
-                                                  _user?.displayName ??
-                                                  'Player',
-                                              note: note.isNotEmpty
-                                                  ? note
-                                                  : null,
-                                            );
-
-                                            if (dialogContext.mounted) {
-                                              Navigator.pop(
-                                                dialogContext,
-                                              ); // close note dialog
-                                            }
-                                            if (context.mounted) {
-                                              Navigator.pop(
-                                                context,
-                                              ); // close match details
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    "You have been removed from the match.",
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          child: const Text("Leave Match"),
-                                        ),
-                                      ],
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                     ),
-                                  );
-                                },
-                                child: const Text(
-                                  "Remove Me",
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 12,
+                                    onPressed: () {
+                                      final noteCtrl = TextEditingController();
+                                      showDialog(
+                                        context: context,
+                                        builder: (dialogContext) => AlertDialog(
+                                          title: const Text("Leave Match"),
+                                          content: TextField(
+                                            controller: noteCtrl,
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  "Note for organizer (optional)",
+                                              hintText:
+                                                  "e.g. Sorry, schedule conflict",
+                                            ),
+                                            autofocus: true,
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(dialogContext),
+                                              child: const Text("Cancel"),
+                                            ),
+                                            ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.red,
+                                                foregroundColor: Colors.white,
+                                              ),
+                                              onPressed: () async {
+                                                final note = noteCtrl.text
+                                                    .trim();
+
+                                                await MatchService.removeMe(
+                                                  matchId: matchId,
+                                                  playerUid: _myUid!,
+                                                  playerDisplayName:
+                                                      _user?.displayName ??
+                                                      'Player',
+                                                  note: note.isNotEmpty
+                                                      ? note
+                                                      : null,
+                                                );
+
+                                                if (dialogContext.mounted) {
+                                                  Navigator.pop(dialogContext);
+                                                }
+                                                if (context.mounted) {
+                                                  Navigator.pop(context);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        "You have been removed from the match.",
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                              child: const Text("Leave Match"),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    child: const Text(
+                                      "Remove Me",
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                              ],
+                            ),
+                          );
+                        })
+                        .toList(),
                   ],
                 ),
               ),
@@ -1091,24 +1096,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   MaterialPageRoute(
                     builder: (context) => MatchChatScreen(
                       matchId: matchId,
-                      currentUserId: _myPhone!,
+                      currentUserId: _myUid!,
                       currentUserName: _user?.displayName ?? 'Player',
                     ),
                   ),
                 );
               },
             ),
-          // FIX: Accept/Decline now use MatchService methods
           if (isInvited)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
                   onPressed: () async {
-                    // FIX: Sets status to 'declined' instead of deleting entry
                     await MatchService.declineInvite(
                       matchId: matchId,
-                      playerUid: _myPhone!,
+                      playerUid: _myUid!,
                     );
                     if (context.mounted) {
                       Navigator.pop(context);
@@ -1124,10 +1127,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       foregroundColor: Colors.white,
                     ),
                     onPressed: () async {
-                      // FIX: Uses typed MatchService with capacity check
                       final success = await MatchService.acceptInvite(
                         matchId: matchId,
-                        playerUid: _myPhone!,
+                        playerUid: _myUid!,
                       );
                       if (context.mounted) {
                         Navigator.pop(context);
@@ -1155,7 +1157,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
               ],
             ),
-          // FIX: Join now uses MatchService with waitlist support
           if (!isJoined && !isInvited && !isFull)
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1165,7 +1166,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () async {
                 final result = await MatchService.joinMatch(
                   matchId: matchId,
-                  playerUid: _myPhone!,
+                  playerUid: _myUid!,
                   playerDisplayName: _user?.displayName ?? 'Player',
                   playerNtrpLevel: _user?.ntrpLevel,
                 );
@@ -1192,6 +1193,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ===========================================================================
+  // LOGIN — resolves phone/email → UUID, creates new UUID doc if needed
+  // ===========================================================================
   Widget _buildLogin() {
     return Scaffold(
       body: Center(
@@ -1221,15 +1225,38 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (loginId.contains('@')) {
                     loginId = loginId.toLowerCase();
                   } else {
-                    // Normalize phone: strip non-digits and leading 1
                     loginId = loginId
                         .replaceAll(RegExp(r'[^\d]'), '')
                         .replaceFirst(RegExp(r'^1'), '');
                     if (loginId.isEmpty) return;
                   }
 
+                  // Resolve contact → UUID
+                  String? uid = await _resolveContactToUid(loginId);
+
+                  if (uid == null) {
+                    // New user — create a doc with auto-generated UUID
+                    final newDocRef = FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(); // auto-ID
+
+                    await newDocRef.set({
+                      'display_name': '',
+                      'primary_contact': loginId,
+                      if (loginId.contains('@'))
+                        'email': loginId
+                      else
+                        'phone_number': loginId,
+                      'accountStatus': 'provisional',
+                      'role': 'player',
+                      'createdAt': FieldValue.serverTimestamp(),
+                    });
+
+                    uid = newDocRef.id;
+                  }
+
                   final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('user_phone', loginId);
+                  await prefs.setString('user_uid', uid);
                   _loadUser();
                 },
                 style: ElevatedButton.styleFrom(
@@ -1274,7 +1301,6 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               children: [
                 Expanded(
-                  // FIX: Uses Places API (New) — supports CORS natively, no proxy
                   child: TypeAheadField<String>(
                     suggestionsCallback: _fetchPlaceSuggestions,
                     itemBuilder: (context, suggestion) {
@@ -1314,6 +1340,12 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _emailCtrl,
               decoration: const InputDecoration(labelText: "Email"),
               keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _phoneFormCtrl,
+              decoration: const InputDecoration(labelText: "Phone Number"),
+              keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 20),
             const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold)),

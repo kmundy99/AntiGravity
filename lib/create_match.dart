@@ -38,7 +38,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   bool _isSaving = false;
 
   final List<User> _selectedRecruits = [];
-  String? _currentUserPhone;
+  String? _currentUserUid; // UUID
   String _organizerName = 'Organizer (You)';
   double _organizerNtrp = 0.0;
 
@@ -60,22 +60,22 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
 
   void _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final phone = prefs.getString('user_phone');
-    if (phone != null) {
+    final uid = prefs.getString('user_uid');
+    if (uid != null) {
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(phone)
+          .doc(uid)
           .get();
       if (doc.exists) {
         final userData = doc.data() as Map<String, dynamic>;
         setState(() {
           _organizerName = userData['display_name'] ?? 'Organizer';
           _organizerNtrp = (userData['ntrp_level'] ?? 0.0).toDouble();
-          _currentUserPhone = phone;
+          _currentUserUid = uid;
         });
       } else {
         setState(() {
-          _currentUserPhone = phone;
+          _currentUserUid = uid;
         });
       }
     }
@@ -88,6 +88,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   }
 
   /// Loads User objects from Firestore for the Rematch pre-fill.
+  /// UIDs are now Firestore doc IDs (UUIDs).
   Future<void> _loadRematchPlayers(List<String> uids) async {
     final users = <User>[];
     for (final uid in uids) {
@@ -111,9 +112,6 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     }
   }
 
-  // =========================================================================
-  // Google Places Autocomplete — Places API (New) with unrestricted key
-  // =========================================================================
   Future<List<String>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
 
@@ -152,7 +150,6 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             "COURT LOCATION",
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
-          // FIX: Uses Places API (New) — supports CORS natively, no proxy
           TypeAheadField<String>(
             suggestionsCallback: _fetchPlaceSuggestions,
             itemBuilder: (context, suggestion) {
@@ -166,9 +163,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
               _addressController?.text = suggestion;
             },
             builder: (context, controller, focusNode) {
-              _addressController =
-                  controller; // Capture controller for onSelected
-              // Pre-fill address field for Rematch
+              _addressController = controller;
               if (_selectedAddress.isNotEmpty && controller.text.isEmpty) {
                 controller.text = _selectedAddress;
               }
@@ -222,7 +217,6 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                     if (time != null) {
                       setState(() {
                         _selectedStartTime = time;
-                        // Default end time to 1.5 hours later
                         int endHour = time.hour + 1;
                         int endMinute = time.minute + 30;
                         if (endMinute >= 60) {
@@ -302,7 +296,6 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
 
-          // Requirement: List current players with a way to remove them
           Wrap(
             spacing: 8,
             children: [
@@ -323,14 +316,15 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             icon: const Icon(Icons.person_add),
             label: const Text('Add Players...'),
             onPressed: () async {
-              if (_currentUserPhone == null) return;
+              if (_currentUserUid == null) return;
               final List<User>? selectedUsers = await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => SelectPlayersScreen(
-                    currentUserPhone: _currentUserPhone!,
+                    currentUserUid: _currentUserUid!,
+                    // UUID MIGRATION: Use user.uid (UUID) for deduplication
                     alreadyInRosterUids: _selectedRecruits
-                        .map((u) => u.primaryContact)
+                        .map((u) => u.uid)
                         .toList(),
                   ),
                 ),
@@ -375,13 +369,13 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                     );
 
                     final newMatch = Match(
-                      organizerId: _currentUserPhone ?? 'host',
+                      organizerId: _currentUserUid ?? 'host', // UUID
                       location: _selectedAddress,
                       matchDate: finalDateTime,
                       status: MatchStatus.Filling,
                       roster: [
                         Roster(
-                          uid: _currentUserPhone ?? 'host',
+                          uid: _currentUserUid ?? 'host', // UUID
                           displayName: _organizerName,
                           status: RosterStatus.accepted,
                           ntrpLevel: _organizerNtrp > 0 ? _organizerNtrp : null,
@@ -389,8 +383,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                       ],
                       requiredCount: _playerLimit,
                       minNtrp: _minNtrp,
-                      maxNtrp: 7.0, // Default max
-                      currentTier: 1, // Default tier
+                      maxNtrp: 7.0,
+                      currentTier: 1,
                     );
 
                     try {
@@ -414,7 +408,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                             content: Text('Match saved successfully!'),
                           ),
                         );
-                        Navigator.pop(context); // Go back home
+                        Navigator.pop(context);
                       }
                     } catch (e) {
                       if (mounted) {

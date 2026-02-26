@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models.dart';
-import '../invite_player.dart';
+import '../widgets/add_custom_player_button.dart';
 import '../utils/feedback_utils.dart';
 
 class SelectPlayersScreen extends StatefulWidget {
-  final String currentUserPhone;
+  final String currentUserUid;
   final List<String> alreadyInRosterUids;
 
   const SelectPlayersScreen({
     super.key,
-    required this.currentUserPhone,
+    required this.currentUserUid,
     this.alreadyInRosterUids = const [],
   });
 
@@ -23,7 +23,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
   final List<User> _selectedUsers = [];
 
   double _minNtrpFilter = 0.0;
-  int? _circleFilter; // null means 'All'
+  int? _circleFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +46,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
         onPressed: () {
           showFeedbackModal(
             context,
-            widget.currentUserPhone,
+            widget.currentUserUid,
             'User',
             "Select Players Screen",
           );
@@ -65,18 +65,17 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
           final docs = snapshot.data!.docs;
 
           final currentUserDocIndex = docs.indexWhere(
-            (d) => d.id == widget.currentUserPhone,
+            (d) => d.id == widget.currentUserUid,
           );
           if (currentUserDocIndex == -1) {
             return const Center(child: Text("Error: User record not found."));
           }
           final currentUser = User.fromFirestore(docs[currentUserDocIndex]);
 
-          // Filter players
           var players = docs.where((doc) {
             final user = User.fromFirestore(doc);
             if (user.displayName.isEmpty) return false;
-            if (doc.id == widget.currentUserPhone) return false;
+            if (doc.id == widget.currentUserUid) return false;
             if (widget.alreadyInRosterUids.contains(doc.id)) return false;
 
             if (user.ntrpLevel < _minNtrpFilter) return false;
@@ -169,24 +168,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Add Custom Player'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade700,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const InvitePlayerScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                    Expanded(child: const AddCustomPlayerButton()),
                     const SizedBox(width: 10),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -213,7 +195,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                 child: ListView.builder(
                   itemCount: players.length,
                   itemBuilder: (context, index) {
-                    final docId = players[index].id;
+                    final docId = players[index].id; // UUID
                     final user = User.fromFirestore(players[index]);
                     final isSelected = _selectedUids.contains(docId);
                     final assignedCircle = currentUser.circleRatings[docId];
@@ -255,14 +237,12 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                               setState(() {
                                 if (val == true) {
                                   _selectedUids.add(docId);
-                                  // Store the uid on the user object for convenience since id isn't on User model
                                   _selectedUsers.add(user);
                                 } else {
                                   _selectedUids.remove(docId);
+                                  // Match by uid (UUID) for reliable removal
                                   _selectedUsers.removeWhere(
-                                    (u) =>
-                                        u.displayName == user.displayName &&
-                                        u.primaryContact == user.primaryContact,
+                                    (u) => u.uid == user.uid,
                                   );
                                 }
                               });
@@ -275,9 +255,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                           if (isSelected) {
                             _selectedUids.remove(docId);
                             _selectedUsers.removeWhere(
-                              (u) =>
-                                  u.displayName == user.displayName &&
-                                  u.primaryContact == user.primaryContact,
+                              (u) => u.uid == user.uid,
                             );
                           } else {
                             _selectedUids.add(docId);

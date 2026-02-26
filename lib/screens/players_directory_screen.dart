@@ -3,15 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../models.dart';
-import '../invite_player.dart';
+import '../widgets/add_custom_player_button.dart';
 
 class PlayersDirectoryScreen extends StatefulWidget {
-  final String currentUserPhone;
+  final String currentUserUid;
   final VoidCallback onEditProfile;
 
   const PlayersDirectoryScreen({
     super.key,
-    required this.currentUserPhone,
+    required this.currentUserUid,
     required this.onEditProfile,
   });
 
@@ -39,7 +39,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
         final docs = snapshot.data!.docs;
 
         final currentUserDocIndex = docs.indexWhere(
-          (d) => d.id == widget.currentUserPhone,
+          (d) => d.id == widget.currentUserUid,
         );
         if (currentUserDocIndex == -1) return const SizedBox.shrink();
         final currentUser = User.fromFirestore(docs[currentUserDocIndex]);
@@ -50,27 +50,24 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
           if (user.displayName.isEmpty) return false;
 
           // Always show self so they can edit their profile
-          if (doc.id == widget.currentUserPhone) return true;
+          if (doc.id == widget.currentUserUid) return true;
 
-          // 1. Min NTRP Filter
           if (_filterMinNtrp > 0.0 && user.ntrpLevel < _filterMinNtrp) {
             return false;
           }
 
-          // Name Search Filter
           if (_filterName.trim().isNotEmpty) {
             final nameStr = user.displayName.toLowerCase();
             if (!nameStr.contains(_filterName.trim().toLowerCase()))
               return false;
           }
 
-          // 2. Location String Filter (Case Insensitive)
           if (_filterLocation.isNotEmpty) {
             final addr = user.address.toLowerCase();
             if (!addr.contains(_filterLocation.toLowerCase())) return false;
           }
 
-          // 3. Circle Filter
+          // Circle filter uses doc.id (UUID) as key into circleRatings
           if (_filterCircle != null) {
             final assignedCircle = currentUser.circleRatings[doc.id];
             if (assignedCircle != _filterCircle) return false;
@@ -81,7 +78,6 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
 
         return Column(
           children: [
-            // Advanced Filters Panel
             ExpansionTile(
               title: const Text(
                 "Advanced Filters",
@@ -158,7 +154,13 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                 const SizedBox(height: 10),
               ],
             ),
-
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: AddCustomPlayerButton(
+                label: 'Create Shadow Profile',
+                fullWidth: true,
+              ),
+            ),
             Expanded(
               child: filteredDocs.isEmpty
                   ? const Center(
@@ -168,14 +170,11 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       itemCount: filteredDocs.length,
                       itemBuilder: (context, index) {
                         final user = User.fromFirestore(filteredDocs[index]);
-                        final isSelected = _selectedPlayers.contains(
-                          filteredDocs[index].id,
-                        );
+                        final docId = filteredDocs[index].id; // UUID
+                        final isSelected = _selectedPlayers.contains(docId);
 
-                        final isMe =
-                            filteredDocs[index].id == widget.currentUserPhone;
-                        final assignedCircle =
-                            currentUser.circleRatings[filteredDocs[index].id];
+                        final isMe = docId == widget.currentUserUid;
+                        final assignedCircle = currentUser.circleRatings[docId];
 
                         return ExpansionTile(
                           leading: CircleAvatar(
@@ -215,9 +214,9 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                 onChanged: (val) {
                                   setState(() {
                                     if (val == true) {
-                                      _selectedPlayers.add(docs[index].id);
+                                      _selectedPlayers.add(docId);
                                     } else {
-                                      _selectedPlayers.remove(docs[index].id);
+                                      _selectedPlayers.remove(docId);
                                     }
                                   });
                                 },
@@ -235,7 +234,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    "Phone: ${user.primaryContact.isNotEmpty ? user.primaryContact : 'Not provided'}",
+                                    "Phone: ${user.phoneNumber.isNotEmpty ? user.phoneNumber : 'Not provided'}",
                                   ),
                                   Text(
                                     "Email: ${user.email.isNotEmpty ? user.email : 'Not provided'}",
@@ -292,7 +291,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                         final newCircle = set.isEmpty
                                             ? null
                                             : set.first;
-                                        final targetUid = docs[index].id;
+                                        final targetUid = docId;
 
                                         final newRatings =
                                             Map<String, int>.from(
@@ -304,9 +303,10 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                           newRatings[targetUid] = newCircle;
                                         }
 
+                                        // Write to current user's doc by UUID
                                         await FirebaseFirestore.instance
                                             .collection('users')
-                                            .doc(widget.currentUserPhone)
+                                            .doc(widget.currentUserUid)
                                             .update({
                                               'circleRatings': newRatings,
                                             });
@@ -361,6 +361,9 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                                               Colors.white,
                                                         ),
                                                     onPressed: () async {
+                                                      final myUid =
+                                                          widget.currentUserUid;
+
                                                       final matchesSnapshot =
                                                           await FirebaseFirestore
                                                               .instance
@@ -374,10 +377,8 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                                         final matchData = doc
                                                             .data();
 
-                                                        // Delete matches organized by this user
                                                         if (matchData['organizerId'] ==
-                                                            widget
-                                                                .currentUserPhone) {
+                                                            myUid) {
                                                           await doc.reference
                                                               .delete();
                                                           continue;
@@ -391,9 +392,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                                             roster.length;
                                                         roster.removeWhere(
                                                           (r) =>
-                                                              r['uid'] ==
-                                                              widget
-                                                                  .currentUserPhone,
+                                                              r['uid'] == myUid,
                                                         );
                                                         if (roster.length <
                                                             initialLength) {
@@ -408,20 +407,15 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                                       await FirebaseFirestore
                                                           .instance
                                                           .collection('users')
-                                                          .doc(
-                                                            widget
-                                                                .currentUserPhone,
-                                                          )
+                                                          .doc(myUid)
                                                           .delete();
                                                       if (context.mounted) {
                                                         final prefs =
                                                             await SharedPreferences.getInstance();
                                                         await prefs.remove(
-                                                          'user_phone',
+                                                          'user_uid',
                                                         );
-                                                        Navigator.pop(
-                                                          context,
-                                                        ); // Close dialog
+                                                        Navigator.pop(context);
                                                         ScaffoldMessenger.of(
                                                           context,
                                                         ).showSnackBar(
@@ -459,37 +453,20 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       },
                     ),
             ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.blue.shade50,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.person_add),
-                    label: const Text('Create Shadow Profile'),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(40),
-                      backgroundColor: Colors.orange.shade700,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const InvitePlayerScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  if (_selectedPlayers.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+            if (_selectedPlayers.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.blue.shade50,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text("Selected: ${_selectedPlayers.length} players"),
                     const SizedBox(height: 10),
                     ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(40),
+                      ),
                       onPressed: () {
-                        // TODO: Navigate to create match with pre-selected players
-                        // Or show "Availability Heatmap"
                         showDialog(
                           context: context,
                           builder: (context) => AlertDialog(
@@ -509,9 +486,8 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       child: const Text("View Availability Heatmap"),
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
           ],
         );
       },

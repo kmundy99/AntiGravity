@@ -181,13 +181,7 @@ void showFeedbackModal(
                           },
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            type == "Help/Question"
-                                ? (aiResponse.isEmpty
-                                      ? "Ask AI"
-                                      : "Ask Another")
-                                : "Submit",
-                          ),
+                        : Text("Submit"),
                   ),
                 ),
                 const SizedBox(height: 20),

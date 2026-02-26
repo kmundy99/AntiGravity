@@ -5,7 +5,7 @@ import '../services/notification_service.dart';
 
 class MatchChatScreen extends StatefulWidget {
   final String matchId;
-  final String currentUserId;
+  final String currentUserId; // UUID
   final String currentUserName;
 
   const MatchChatScreen({
@@ -33,7 +33,7 @@ class _MatchChatScreenState extends State<MatchChatScreen> {
         .collection('messages')
         .add({
           'text': text,
-          'senderId': widget.currentUserId,
+          'senderId': widget.currentUserId, // UUID
           'senderName': widget.currentUserName,
           'timestamp': FieldValue.serverTimestamp(),
         });
@@ -52,11 +52,10 @@ class _MatchChatScreenState extends State<MatchChatScreen> {
         for (var p in roster) {
           final r = p as Map<String, dynamic>;
           final uid = r['uid'] as String? ?? '';
-          if (uid != widget.currentUserId &&
-              uid.isNotEmpty &&
-              !uid.startsWith('shadow_')) {
+          // Notify all roster members except the sender
+          if (uid != widget.currentUserId && uid.isNotEmpty) {
             NotificationService.sendChatNotification(
-              contact: uid,
+              contact: uid, // UUID — _send() looks up contact info
               matchId: widget.matchId,
               senderName: widget.currentUserName,
               messagePreview: text,
@@ -74,7 +73,7 @@ class _MatchChatScreenState extends State<MatchChatScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Match Chat")),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 60.0), // Above the text input
+        padding: const EdgeInsets.only(bottom: 60.0),
         child: FloatingActionButton(
           heroTag: 'feedbackBtnMatchChat',
           onPressed: () {

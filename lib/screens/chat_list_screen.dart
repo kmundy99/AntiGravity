@@ -3,12 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'match_chat_screen.dart';
 
 class ChatListScreen extends StatelessWidget {
-  final String currentUserPhone;
+  final String currentUserUid;
   final String currentUserName;
 
   const ChatListScreen({
     super.key,
-    required this.currentUserPhone,
+    required this.currentUserUid,
     required this.currentUserName,
   });
 
@@ -25,8 +25,8 @@ class ChatListScreen extends StatelessWidget {
         final myMatches = docs.where((doc) {
           final matchData = doc.data() as Map<String, dynamic>;
           final List roster = matchData['roster'] ?? [];
-          return roster.any((r) => r['uid'] == currentUserPhone) ||
-              matchData['organizerId'] == currentUserPhone;
+          return roster.any((r) => r['uid'] == currentUserUid) ||
+              matchData['organizerId'] == currentUserUid;
         }).toList();
 
         if (myMatches.isEmpty)
@@ -46,7 +46,7 @@ class ChatListScreen extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (context) => MatchChatScreen(
                       matchId: doc.id,
-                      currentUserId: currentUserPhone,
+                      currentUserId: currentUserUid,
                       currentUserName: currentUserName,
                     ),
                   ),

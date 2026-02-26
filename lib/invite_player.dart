@@ -12,7 +12,7 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
 
-  // This function cleans the phone number or lowercases the email
+  /// Cleans the phone number or lowercases the email
   String _normalizeContact(String input) {
     String trimmed = input.trim();
     if (trimmed.contains('@')) {
@@ -62,20 +62,43 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
                 final normalizedContact = _normalizeContact(phone);
                 if (normalizedContact.isEmpty) return;
 
-                // This sends your info to the "users" folder in your database
-                await FirebaseFirestore.instance
+                // Check if a user with this contact already exists
+                var existingQuery = await FirebaseFirestore.instance
                     .collection('users')
-                    .doc(normalizedContact)
-                    .set({
-                      'display_name': name,
-                      'primary_contact': normalizedContact,
-                      if (normalizedContact.contains('@'))
-                        'email': normalizedContact,
-                      'accountStatus':
-                          'provisional', // Marks this as a Shadow Profile
-                      'role': 'player',
-                      'createdAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
+                    .where('primary_contact', isEqualTo: normalizedContact)
+                    .limit(1)
+                    .get();
+
+                if (existingQuery.docs.isEmpty &&
+                    normalizedContact.contains('@')) {
+                  existingQuery = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('email', isEqualTo: normalizedContact)
+                      .limit(1)
+                      .get();
+                }
+
+                if (existingQuery.docs.isNotEmpty) {
+                  // User already exists — update name if it was empty
+                  final existingDoc = existingQuery.docs.first;
+                  final existingData = existingDoc.data();
+                  if ((existingData['display_name'] ?? '').toString().isEmpty) {
+                    await existingDoc.reference.update({'display_name': name});
+                  }
+                } else {
+                  // UUID MIGRATION: Create with auto-generated doc ID
+                  await FirebaseFirestore.instance.collection('users').add({
+                    'display_name': name,
+                    'primary_contact': normalizedContact,
+                    if (normalizedContact.contains('@'))
+                      'email': normalizedContact
+                    else
+                      'phone_number': normalizedContact,
+                    'accountStatus': 'provisional',
+                    'role': 'player',
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+                }
 
                 if (mounted) Navigator.pop(context);
               },

@@ -7,11 +7,9 @@ class MatchService {
   static final _matchesRef = FirebaseFirestore.instance.collection('matches');
 
   // ---------------------------------------------------------------------------
-  // RECRUITMENT (existing, now with awaited notifications)
+  // RECRUITMENT
   // ---------------------------------------------------------------------------
 
-  /// Unifies the recruitment flow by handling deduplication, role assignment,
-  /// database updates, and email/SMS trigger generation in a single pass.
   static Future<void> addPlayersToMatch({
     required BuildContext context,
     required Match match,
@@ -25,13 +23,14 @@ class MatchService {
     final newRosterEntries = <Roster>[];
 
     for (final recruit in newRecruits) {
-      final contactId = recruit.primaryContact;
-      if (contactId.isEmpty) continue;
-      if (existingUids.contains(contactId)) continue;
+      // UUID MIGRATION: Use recruit.uid (Firestore doc ID) instead of primaryContact
+      final recruitUid = recruit.uid;
+      if (recruitUid.isEmpty) continue;
+      if (existingUids.contains(recruitUid)) continue;
 
       newRosterEntries.add(
         Roster(
-          uid: contactId,
+          uid: recruitUid,
           displayName: recruit.displayName,
           status: RosterStatus.invited,
           ntrpLevel: recruit.ntrpLevel,
@@ -52,22 +51,20 @@ class MatchService {
       return;
     }
 
-    // Write to Firestore
     final mapsToAdd = newRosterEntries.map((r) => r.toMap()).toList();
     await _matchesRef.doc(matchId).update({
       'roster': FieldValue.arrayUnion(mapsToAdd),
     });
 
-    // Dispatch notifications — await all so errors aren't swallowed
     final futures = <Future>[];
     for (final entry in newRosterEntries) {
       futures.add(
         NotificationService.sendInvite(
-          contact: entry.uid,
+          contact: entry.uid, // UUID
           match: match,
           matchId: matchId,
           organizerName: organizerName,
-          isSms: !entry.uid.contains('@'),
+          isSms: false, // kept for API compatibility; _send() handles routing
         ),
       );
     }
@@ -83,13 +80,9 @@ class MatchService {
   }
 
   // ---------------------------------------------------------------------------
-  // ACCEPT INVITE — player moves from `invited` → `accepted`
+  // ACCEPT INVITE
   // ---------------------------------------------------------------------------
 
-  /// Accepts a pending invite for [playerUid] in match [matchId].
-  /// Reads the current roster from Firestore, flips the status, and writes back.
-  /// Returns `true` if the accept succeeded, `false` if the match was full or
-  /// the player wasn't found in the roster.
   static Future<bool> acceptInvite({
     required String matchId,
     required String playerUid,
@@ -101,14 +94,12 @@ class MatchService {
     final roster = List<Roster>.from(match.roster);
 
     final idx = roster.indexWhere((r) => r.uid == playerUid);
-    if (idx == -1) return false; // not in roster
+    if (idx == -1) return false;
 
-    // Check capacity before accepting
     final acceptedCount = roster
         .where((r) => r.status == RosterStatus.accepted)
         .length;
     if (acceptedCount >= match.requiredCount) {
-      // Match is full — could offer waitlist instead
       return false;
     }
 
@@ -128,12 +119,9 @@ class MatchService {
   }
 
   // ---------------------------------------------------------------------------
-  // DECLINE INVITE — player moves from `invited` → `declined` (preserves record)
+  // DECLINE INVITE
   // ---------------------------------------------------------------------------
 
-  /// Declines a pending invite for [playerUid].
-  /// Sets status to `declined` instead of deleting, so the player isn't
-  /// accidentally re-invited and we keep an audit trail.
   static Future<void> declineInvite({
     required String matchId,
     required String playerUid,
@@ -161,11 +149,9 @@ class MatchService {
   }
 
   // ---------------------------------------------------------------------------
-  // JOIN MATCH — a non-invited player adds themselves (from calendar feed)
+  // JOIN MATCH
   // ---------------------------------------------------------------------------
 
-  /// Adds a player who was NOT previously invited. Enforces capacity limit.
-  /// Returns a [JoinResult] indicating success, full, or waitlisted.
   static Future<JoinResult> joinMatch({
     required String matchId,
     required String playerUid,
@@ -177,7 +163,6 @@ class MatchService {
 
     final match = Match.fromFirestore(doc);
 
-    // Guard: already in roster?
     if (match.roster.any((r) => r.uid == playerUid)) {
       return JoinResult.alreadyInRoster;
     }
@@ -187,7 +172,6 @@ class MatchService {
         .length;
 
     if (acceptedCount < match.requiredCount) {
-      // Slot available — join as accepted
       final newEntry = Roster(
         uid: playerUid,
         displayName: playerDisplayName,
@@ -202,7 +186,6 @@ class MatchService {
       return JoinResult.accepted;
     }
 
-    // Match is full — check waitlist availability (N+1 rule: exactly 1 waitlist spot)
     final waitlistCount = match.roster
         .where((r) => r.status == RosterStatus.waitlisted)
         .length;
@@ -227,12 +210,9 @@ class MatchService {
   }
 
   // ---------------------------------------------------------------------------
-  // REMOVE ME — an accepted player opts out; triggers waitlist promotion
+  // REMOVE ME
   // ---------------------------------------------------------------------------
 
-  /// Removes the current player from the roster, notifies the organizer
-  /// (with an optional [note] explaining why), and auto-promotes a waitlisted
-  /// player if one exists.
   static Future<void> removeMe({
     required String matchId,
     required String playerUid,
@@ -245,7 +225,6 @@ class MatchService {
     final match = Match.fromFirestore(doc);
     final roster = List<Roster>.from(match.roster);
 
-    // Remove the player
     roster.removeWhere((r) => r.uid == playerUid);
 
     // Auto-promote waitlisted player (earliest timestamp wins)
@@ -272,12 +251,10 @@ class MatchService {
       }
     }
 
-    // Write the updated roster
     await _matchesRef.doc(matchId).update({
       'roster': roster.map((r) => r.toMap()).toList(),
     });
 
-    // Notify organizer about the drop-out (now includes optional note)
     await NotificationService.notifyOrganizerDropOut(
       match: match,
       matchId: matchId,
@@ -285,7 +262,6 @@ class MatchService {
       note: note,
     );
 
-    // If someone was promoted from waitlist, notify them too
     if (promotedPlayerUid != null && promotedPlayerUid.isNotEmpty) {
       final promotedName = waitlisted.first.displayName;
       await NotificationService.sendMatchUpdate(
@@ -297,5 +273,4 @@ class MatchService {
   }
 }
 
-/// Result of a [MatchService.joinMatch] attempt.
 enum JoinResult { accepted, waitlisted, full, alreadyInRoster, error }

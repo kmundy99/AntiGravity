@@ -3,12 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum AccountStatus { provisional, fully_registered }
 
 class User {
+  /// Firestore document ID — a stable UUID, NOT the phone/email.
+  final String uid;
   final String displayName;
   final String primaryContact;
   final double ntrpLevel;
   final String gender;
   final String address;
   final String email;
+  final String phoneNumber;
   final bool notifActive;
   final String notifMode;
   final AccountStatus accountStatus;
@@ -17,12 +20,14 @@ class User {
   final Timestamp? activatedAt;
 
   User({
+    this.uid = '',
     required this.displayName,
     required this.primaryContact,
     required this.ntrpLevel,
     required this.gender,
     required this.address,
     required this.email,
+    this.phoneNumber = '',
     required this.notifActive,
     required this.notifMode,
     required this.accountStatus,
@@ -41,12 +46,14 @@ class User {
     }
 
     return User(
+      uid: doc.id, // Firestore doc ID is the stable UUID
       displayName: data['display_name'] ?? '',
       primaryContact: contact,
       ntrpLevel: (data['ntrp_level'] ?? 0.0).toDouble(),
       gender: data['gender'] ?? '',
       address: data['address'] ?? '',
       email: data['email'] ?? '',
+      phoneNumber: data['phone_number'] ?? '',
       notifActive: data['notif_active'] ?? true,
       notifMode: data['notif_mode'] ?? 'SMS',
       accountStatus: AccountStatus.values.firstWhere(
@@ -71,6 +78,7 @@ class User {
       'gender': gender,
       'address': address,
       'email': email,
+      'phone_number': phoneNumber,
       'notif_active': notifActive,
       'notif_mode': notifMode,
       'accountStatus': accountStatus.toString().split('.').last,
@@ -182,7 +190,6 @@ class Roster {
       'displayName': displayName,
       'status': status.toString().split('.').last,
       'waitlist_timestamp': waitlistTimestamp,
-      // FIX: ntrpLevel was previously omitted, causing silent data loss
       if (ntrpLevel != null) 'ntrpLevel': ntrpLevel,
     };
   }
