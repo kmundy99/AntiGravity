@@ -28,5 +28,8 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "extensions": {
+    "send-message": "twilio/send-message@0.3.4"
   }
 }

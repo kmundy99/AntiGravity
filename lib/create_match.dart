@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'models.dart';
 import 'secrets.dart';
 import 'screens/select_players_screen.dart';
@@ -13,7 +12,6 @@ import 'services/match_service.dart';
 
 class CreateMatchScreen extends StatefulWidget {
   final DateTime? prefillDate;
-  // FIX: New params for Rematch flow (from HistoryScreen)
   final String? prefillLocation;
   final List<String>? prefillPlayerUids;
 
@@ -53,7 +51,6 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         widget.prefillDate!.add(const Duration(hours: 1, minutes: 30)),
       );
     }
-    // FIX: Pre-fill location from Rematch
     if (widget.prefillLocation != null) {
       _selectedAddress = widget.prefillLocation!;
     }
@@ -82,7 +79,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       }
     }
 
-    // FIX: Load previous players for Rematch flow
+    // Load previous players for Rematch flow
     if (widget.prefillPlayerUids != null &&
         widget.prefillPlayerUids!.isNotEmpty) {
       await _loadRematchPlayers(widget.prefillPlayerUids!);
@@ -113,6 +110,34 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     }
   }
 
+  // =========================================================================
+  // Google Places Autocomplete (New API — supports CORS, no proxy needed)
+  // =========================================================================
+  Future<List<String>> _fetchPlaceSuggestions(String input) async {
+    if (input.isEmpty) return [];
+    try {
+      final response = await http.post(
+        Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googleMapsApiKey,
+        },
+        body: jsonEncode({'input': input}),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final suggestions = json['suggestions'] as List? ?? [];
+        return suggestions
+            .where((s) => s['placePrediction'] != null)
+            .map((s) => s['placePrediction']['text']['text'] as String)
+            .toList();
+      }
+    } catch (e) {
+      // Silently fall back to manual typing if API fails
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -124,30 +149,9 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             "COURT LOCATION",
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
+          // FIX: Uses Places API (New) — supports CORS natively, no proxy
           TypeAheadField<String>(
-            suggestionsCallback: (pattern) async {
-              if (pattern.isEmpty) return [];
-              try {
-                final String targetUrl =
-                    'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$pattern&key=$googleMapsApiKey';
-                final url = Uri.parse(
-                  kIsWeb
-                      ? 'https://corsproxy.io/?${Uri.encodeComponent(targetUrl)}'
-                      : targetUrl,
-                );
-                final response = await http.get(url);
-                if (response.statusCode == 200) {
-                  final json = jsonDecode(response.body);
-                  final predictions = json['predictions'] as List;
-                  return predictions
-                      .map((p) => p['description'] as String)
-                      .toList();
-                }
-              } catch (e) {
-                // Ignore network/CORS errors to allow manual typing fallback
-              }
-              return [];
-            },
+            suggestionsCallback: _fetchPlaceSuggestions,
             itemBuilder: (context, suggestion) {
               return ListTile(
                 leading: const Icon(Icons.place),
@@ -161,7 +165,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             builder: (context, controller, focusNode) {
               _addressController =
                   controller; // Capture controller for onSelected
-              // FIX: Pre-fill address field for Rematch
+              // Pre-fill address field for Rematch
               if (_selectedAddress.isNotEmpty && controller.text.isEmpty) {
                 controller.text = _selectedAddress;
               }

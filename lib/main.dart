@@ -118,18 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _calendarDataSource = _MeetingDataSource(<Appointment>[]);
     _loadUser();
 
-    // DEBUG: Fetch recent feedback logs
-    FirebaseFirestore.instance
-        .collection('feedbacks')
-        .orderBy('createdAt', descending: true)
-        .limit(5)
-        .get()
-        .then((snap) {
-          for (var doc in snap.docs) {
-            print("======== FEEDBACK LOG ========");
-            print(doc.data());
-          }
-        });
+    // FIX: Removed DEBUG feedback log block (was printing user data to console)
 
     _matchesSub = FirebaseFirestore.instance
         .collection('matches')
@@ -274,6 +263,34 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text("Could not open maps")));
     }
+  }
+
+  // =========================================================================
+  // Google Places Autocomplete (New API — supports CORS, no proxy needed)
+  // =========================================================================
+  Future<List<String>> _fetchPlaceSuggestions(String input) async {
+    if (input.isEmpty) return [];
+    try {
+      final response = await http.post(
+        Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googleMapsApiKey,
+        },
+        body: jsonEncode({'input': input}),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final suggestions = json['suggestions'] as List? ?? [];
+        return suggestions
+            .where((s) => s['placePrediction'] != null)
+            .map((s) => s['placePrediction']['text']['text'] as String)
+            .toList();
+      }
+    } catch (e) {
+      // Silently fall back to manual typing if API fails
+    }
+    return [];
   }
 
   @override
@@ -820,76 +837,123 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 4),
                     // FIX: Use typed Roster objects instead of raw maps
-                    ...match.roster
-                        .where((r) => r.status == RosterStatus.accepted)
-                        .map((r) {
-                          final bool isMe = r.uid == _myPhone;
-                          final bool isOrgPlayer = r.uid == match.organizerId;
-                          final String cleanName = r.displayName.replaceAll(
-                            ' (You)',
-                            '',
-                          );
+                    ...match.roster.where((r) => r.status == RosterStatus.accepted).map((
+                      r,
+                    ) {
+                      final bool isMe = r.uid == _myPhone;
+                      final bool isOrgPlayer = r.uid == match.organizerId;
+                      final String cleanName = r.displayName.replaceAll(
+                        ' (You)',
+                        '',
+                      );
 
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2.0),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.check_circle,
-                                  size: 16,
-                                  color: Colors.green,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    isMe ? "$cleanName (You)" : cleanName,
-                                  ),
-                                ),
-                                // FIX: "Remove Me" now uses MatchService.removeMe()
-                                if (isMe && !isOrgPlayer)
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 0,
-                                      ),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    onPressed: () async {
-                                      await MatchService.removeMe(
-                                        matchId: matchId,
-                                        playerUid: _myPhone!,
-                                        playerDisplayName:
-                                            _user?.displayName ?? 'Player',
-                                      );
-                                      if (context.mounted) {
-                                        Navigator.pop(context);
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              "You have been removed from the match.",
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    child: const Text(
-                                      "Remove Me",
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2.0),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: Colors.green,
                             ),
-                          );
-                        })
-                        .toList(),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isMe ? "$cleanName (You)" : cleanName,
+                              ),
+                            ),
+                            // FIX: "Remove Me" now shows a dialog to collect a note
+                            if (isMe && !isOrgPlayer)
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 0,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {
+                                  // Show "Leave Match" dialog with note field
+                                  final noteCtrl = TextEditingController();
+                                  showDialog(
+                                    context: context,
+                                    builder: (dialogContext) => AlertDialog(
+                                      title: const Text("Leave Match"),
+                                      content: TextField(
+                                        controller: noteCtrl,
+                                        decoration: const InputDecoration(
+                                          labelText:
+                                              "Note for organizer (optional)",
+                                          hintText:
+                                              "e.g. Sorry, schedule conflict",
+                                        ),
+                                        autofocus: true,
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dialogContext),
+                                          child: const Text("Cancel"),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          onPressed: () async {
+                                            final note = noteCtrl.text.trim();
+
+                                            await MatchService.removeMe(
+                                              matchId: matchId,
+                                              playerUid: _myPhone!,
+                                              playerDisplayName:
+                                                  _user?.displayName ??
+                                                  'Player',
+                                              note: note.isNotEmpty
+                                                  ? note
+                                                  : null,
+                                            );
+
+                                            if (dialogContext.mounted) {
+                                              Navigator.pop(
+                                                dialogContext,
+                                              ); // close note dialog
+                                            }
+                                            if (context.mounted) {
+                                              Navigator.pop(
+                                                context,
+                                              ); // close match details
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    "You have been removed from the match.",
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          child: const Text("Leave Match"),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  "Remove Me",
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ],
                 ),
               ),
@@ -1133,30 +1197,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               children: [
                 Expanded(
+                  // FIX: Uses Places API (New) — supports CORS natively, no proxy
                   child: TypeAheadField<String>(
-                    suggestionsCallback: (pattern) async {
-                      if (pattern.isEmpty) return [];
-                      try {
-                        final String targetUrl =
-                            'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$pattern&key=$googleMapsApiKey';
-                        final url = Uri.parse(
-                          kIsWeb
-                              ? 'https://corsproxy.io/?${Uri.encodeComponent(targetUrl)}'
-                              : targetUrl,
-                        );
-                        final response = await http.get(url);
-                        if (response.statusCode == 200) {
-                          final json = jsonDecode(response.body);
-                          final predictions = json['predictions'] as List;
-                          return predictions
-                              .map((p) => p['description'] as String)
-                              .toList();
-                        }
-                      } catch (e) {
-                        // Ignore CORS
-                      }
-                      return [];
-                    },
+                    suggestionsCallback: _fetchPlaceSuggestions,
                     itemBuilder: (context, suggestion) {
                       return ListTile(
                         leading: const Icon(Icons.place),

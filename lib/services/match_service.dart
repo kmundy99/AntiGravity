@@ -230,12 +230,14 @@ class MatchService {
   // REMOVE ME — an accepted player opts out; triggers waitlist promotion
   // ---------------------------------------------------------------------------
 
-  /// Removes the current player from the roster, notifies the organizer,
-  /// and auto-promotes a waitlisted player if one exists.
+  /// Removes the current player from the roster, notifies the organizer
+  /// (with an optional [note] explaining why), and auto-promotes a waitlisted
+  /// player if one exists.
   static Future<void> removeMe({
     required String matchId,
     required String playerUid,
     required String playerDisplayName,
+    String? note,
   }) async {
     final doc = await _matchesRef.doc(matchId).get();
     if (!doc.exists) return;
@@ -275,16 +277,16 @@ class MatchService {
       'roster': roster.map((r) => r.toMap()).toList(),
     });
 
-    // Notify organizer about the drop-out
+    // Notify organizer about the drop-out (now includes optional note)
     await NotificationService.notifyOrganizerDropOut(
       match: match,
       matchId: matchId,
       playerName: playerDisplayName,
+      note: note,
     );
 
     // If someone was promoted from waitlist, notify them too
     if (promotedPlayerUid != null && promotedPlayerUid.isNotEmpty) {
-      final isSms = !promotedPlayerUid.contains('@');
       final promotedName = waitlisted.first.displayName;
       await NotificationService.sendMatchUpdate(
         contact: promotedPlayerUid,
