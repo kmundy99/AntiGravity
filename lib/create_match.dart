@@ -112,12 +112,11 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
   }
 
   // =========================================================================
-  // Google Places Autocomplete — tries New API first, falls back to legacy
+  // Google Places Autocomplete — Places API (New) with unrestricted key
   // =========================================================================
   Future<List<String>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
 
-    // 1. Try the Places API (New) — supports CORS natively
     try {
       final response = await http.post(
         Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
@@ -130,33 +129,13 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final suggestions = json['suggestions'] as List? ?? [];
-        final results = suggestions
+        return suggestions
             .where((s) => s['placePrediction'] != null)
             .map((s) => s['placePrediction']['text']['text'] as String)
             .toList();
-        if (results.isNotEmpty) return results;
       }
-    } catch (_) {
-      // New API failed (likely API key restrictions) — try legacy below
-    }
-
-    // 2. Fallback: legacy Places API via CORS proxy (for web) or direct (mobile)
-    try {
-      final String targetUrl =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey';
-      final url = Uri.parse(
-        kIsWeb
-            ? 'https://corsproxy.io/?${Uri.encodeComponent(targetUrl)}'
-            : targetUrl,
-      );
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        final predictions = json['predictions'] as List? ?? [];
-        return predictions.map((p) => p['description'] as String).toList();
-      }
-    } catch (_) {
-      // Both APIs failed — user can still type manually
+    } catch (e) {
+      debugPrint('Places autocomplete error: $e');
     }
 
     return [];
