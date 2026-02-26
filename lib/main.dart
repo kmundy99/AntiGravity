@@ -277,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
         headers: {
           'Content-Type': 'application/json',
-          'X-Goog-Api-Key': googleMapsApiKey,
+          'X-Goog-Api-Key': placesApiKey,
         },
         body: jsonEncode({'input': input}),
       );
