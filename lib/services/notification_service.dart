@@ -47,7 +47,7 @@ class NotificationService {
 
   /// Builds the standard deep link for a match, optionally with a uid for auto-login.
   static String _matchLink(String matchId, {String? uid}) {
-    final base = 'https://lexingtontennis.app/match/$matchId';
+    final base = 'https://finapps.com/#/match/$matchId';
     if (uid != null && uid.isNotEmpty) {
       return '$base?uid=${Uri.encodeComponent(uid)}';
     }
