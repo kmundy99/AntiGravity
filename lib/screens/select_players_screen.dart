@@ -162,6 +162,53 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('Add Custom Player'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const InvitePlayerScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade100,
+                        foregroundColor: Colors.blue.shade900,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          for (var doc in players) {
+                            final docId = doc.id;
+                            if (!_selectedUids.contains(docId)) {
+                              _selectedUids.add(docId);
+                              _selectedUsers.add(User.fromFirestore(doc));
+                            }
+                          }
+                        });
+                      },
+                      child: const Text('Select All'),
+                    ),
+                  ],
+                ),
+              ),
               Expanded(
                 child: ListView.builder(
                   itemCount: players.length,
@@ -246,24 +293,6 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.person_add),
-                      label: const Text('Create Shadow Profile'),
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(50),
-                        backgroundColor: Colors.orange.shade700,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const InvitePlayerScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         minimumSize: const Size.fromHeight(50),

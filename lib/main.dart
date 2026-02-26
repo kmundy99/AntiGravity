@@ -322,6 +322,20 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.settings),
             onPressed: () => setState(() => _isEditingProfile = true),
           ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('user_phone');
+              setState(() {
+                _myPhone = null;
+                _user = null;
+                _isEditingProfile = false;
+                _isQuickSetup = false;
+              });
+            },
+            tooltip: 'Logout',
+          ),
         ],
       ),
       body: _buildBody(),
@@ -388,10 +402,11 @@ class _HomeScreenState extends State<HomeScreen> {
           bool inRoster = roster.any((r) => r['uid'] == _myPhone);
           if (!inRoster && data['organizerId'] != _myPhone) return false;
         } else {
+          // FIX: Match exact name to avoid collisions (e.g., "statements") and ensure they are accepted
           bool inRoster = roster.any(
-            (r) => (r['displayName']?.toString().toLowerCase() ?? '').contains(
-              target,
-            ),
+            (r) =>
+                (r['displayName']?.toString().toLowerCase() ?? '') == target &&
+                r['status'] == 'accepted',
           );
           if (!inRoster) return false;
         }
@@ -419,7 +434,10 @@ class _HomeScreenState extends State<HomeScreen> {
         int circleCount = 0;
         for (var r in roster) {
           final uid = r['uid'];
+          // FIX: Exclude the current user from the circle count and ensure the player is accepted
           if (uid != null &&
+              uid != _myPhone &&
+              r['status'] == 'accepted' &&
               _user!.circleRatings[uid] == _filterIncludesCircle) {
             circleCount++;
           }
@@ -438,13 +456,33 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = (match['match_date'] as Timestamp).toDate();
 
       final List roster = List.from(match['roster'] ?? []);
-      // FIX: Use uid only — no displayName fallback (prevents collision bugs)
-      final bool isJoined = roster.any((r) => r['uid'] == _myPhone);
+      // FIX: Use UID only
+      final bool isJoined = roster.any(
+        (r) => r['uid'] == _myPhone && r['status'] == 'accepted',
+      );
+      final bool isOrganizer = match['organizerId'] == _myPhone;
+
       final int reqCount = match['requiredCount'] ?? 4;
       final int acceptedCount = roster
           .where((r) => r['status'] == 'accepted')
           .length;
       final int spotsOpen = reqCount - acceptedCount;
+      final bool isFull = spotsOpen <= 0;
+
+      // Color Scheme Logic:
+      // 1. Organizer (Full) => Dark Blue
+      // 2. Organizer (Needs Players) => Light Blue
+      // 3. Signed Up (Needs Players) => Green
+      // 4. Eligible to Join (Open Spots, Not Joined, Not Org) => Amber
+      // 5. Match Full (Not Joined, Not Org) => Red (Greyed out conceptually, but keeping Red for visibility of 'Full' matches)
+      Color matchColor;
+      if (isOrganizer) {
+        matchColor = isFull ? Colors.blue.shade900 : Colors.blue.shade400;
+      } else if (isJoined) {
+        matchColor = Colors.green.shade600;
+      } else {
+        matchColor = isFull ? Colors.red.shade400 : Colors.amber.shade600;
+      }
 
       fetchedAppointments.add(
         Appointment(
@@ -453,10 +491,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ? (match['end_time'] as Timestamp).toDate()
               : date.add(const Duration(hours: 1, minutes: 30)),
           subject:
-              "${match['location'] ?? 'Court'} (${spotsOpen > 0 ? '$spotsOpen Spots' : 'Full'})",
-          color: isJoined
-              ? Colors.green.shade600
-              : (spotsOpen > 0 ? Colors.amber.shade600 : Colors.red.shade400),
+              "${match['location'] ?? 'Court'} (${isFull ? 'Full' : '$spotsOpen Spots'})",
+          color: matchColor,
           id: doc.id,
           notes: doc.id, // Store the doc ID for routing
         ),
@@ -618,14 +654,36 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Wrap(
             alignment: WrapAlignment.spaceEvenly,
-            spacing: 16,
+            spacing: 12,
             children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, color: Colors.blue.shade900, size: 12),
+                  const SizedBox(width: 4),
+                  const Text(
+                    "Organizing (Full)",
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, color: Colors.blue.shade400, size: 12),
+                  const SizedBox(width: 4),
+                  const Text(
+                    "Organizing (Needs Players)",
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.circle, color: Colors.green.shade600, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Signed Up", style: TextStyle(fontSize: 12)),
+                  const Text("Signed Up", style: TextStyle(fontSize: 11)),
                 ],
               ),
               Row(
@@ -633,7 +691,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.circle, color: Colors.amber.shade600, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Open Spots", style: TextStyle(fontSize: 12)),
+                  const Text("Eligible & Open", style: TextStyle(fontSize: 11)),
                 ],
               ),
               Row(
@@ -641,7 +699,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.circle, color: Colors.red.shade400, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Match Full", style: TextStyle(fontSize: 12)),
+                  const Text("Match Full", style: TextStyle(fontSize: 11)),
                 ],
               ),
             ],
@@ -804,10 +862,17 @@ class _HomeScreenState extends State<HomeScreen> {
         myRosterEntry != null && myRosterEntry.status == RosterStatus.accepted;
     final bool isInvited =
         myRosterEntry != null && myRosterEntry.status == RosterStatus.invited;
+
+    final int reqCount = match.requiredCount ?? 4;
     final int acceptedCount = match.roster
         .where((r) => r.status == RosterStatus.accepted)
         .length;
-    final bool isFull = acceptedCount >= match.requiredCount;
+    final bool isFull = acceptedCount >= reqCount;
+
+    // FIX: Match Full Logic
+    // If you are invited but the match is already full, you cannot accept anymore.
+    final bool canAccept = isInvited && !isFull;
+
     // FIX: Removed hardcoded 'host_kiran' fallback
     final bool isOrganizer = match.organizerId == _myPhone;
 
@@ -1052,32 +1117,42 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Text("Decline"),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () async {
-                    // FIX: Uses typed MatchService with capacity check
-                    final success = await MatchService.acceptInvite(
-                      matchId: matchId,
-                      playerUid: _myPhone!,
-                    );
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            success
-                                ? "Invite Accepted!"
-                                : "Match is full — couldn't accept.",
-                          ),
-                        ),
+                if (canAccept)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () async {
+                      // FIX: Uses typed MatchService with capacity check
+                      final success = await MatchService.acceptInvite(
+                        matchId: matchId,
+                        playerUid: _myPhone!,
                       );
-                    }
-                  },
-                  child: const Text("Accept Invite"),
-                ),
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? "Invite Accepted!"
+                                  : "Match is full — couldn't accept.",
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text("Accept Invite"),
+                  )
+                else
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: null,
+                    child: const Text("Match Full"),
+                  ),
               ],
             ),
           // FIX: Join now uses MatchService with waitlist support
