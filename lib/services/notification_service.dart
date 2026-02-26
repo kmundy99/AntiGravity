@@ -7,26 +7,146 @@ class NotificationService {
   // SHARED HELPERS — single source of truth for send, formatting, naming
   // ===========================================================================
 
-  /// Sends a notification via SMS (Twilio) or Email (SendGrid) based on
-  /// whether [contact] contains '@'.
-  static Future<void> _send({
-    required String contact,
+  /// Sends an SMS notification via the Twilio trigger collection.
+  static Future<void> _sendSms({
+    required String phone,
+    required String textBody,
+  }) async {
+    await FirebaseFirestore.instance.collection('messages').add({
+      'to': phone,
+      'body': textBody,
+    });
+  }
+
+  /// Sends an Email notification via the SendGrid trigger collection.
+  static Future<void> _sendEmail({
+    required String email,
     required String subject,
     required String textBody,
     required String htmlBody,
   }) async {
-    final isSms = !contact.contains('@');
+    await FirebaseFirestore.instance.collection('mail').add({
+      'to': email,
+      'message': {'subject': subject, 'text': textBody, 'html': htmlBody},
+    });
+  }
 
-    if (isSms) {
-      await FirebaseFirestore.instance.collection('messages').add({
-        'to': contact,
-        'body': textBody,
-      });
-    } else {
-      await FirebaseFirestore.instance.collection('mail').add({
-        'to': contact,
-        'message': {'subject': subject, 'text': textBody, 'html': htmlBody},
-      });
+  /// Looks up a user's notification preferences from Firestore and sends
+  /// the message via their preferred channel(s).
+  ///
+  /// [uid] is the user's Firestore doc ID (their primaryContact — phone or email).
+  ///
+  /// Resolution logic:
+  ///  1. Fetch the user doc to get notifMode, email, and primaryContact.
+  ///  2. Determine available channels:
+  ///     - Phone: primaryContact if it doesn't contain '@'
+  ///     - Email: the 'email' field if set, OR primaryContact if it contains '@'
+  ///  3. Send via the user's preferred channel(s). If the preferred channel
+  ///     isn't available, fall back to whatever IS available.
+  ///  4. For shadow profiles or missing docs, fall back to guessing from uid.
+  static Future<void> _send({
+    required String uid,
+    required String subject,
+    required String textBody,
+    required String htmlBody,
+  }) async {
+    String? phone;
+    String? email;
+    String notifMode = uid.contains('@') ? 'Email' : 'SMS'; // default guess
+
+    // Look up user preferences
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        notifMode = data['notif_mode'] ?? notifMode;
+
+        final primaryContact = data['primary_contact'] ?? uid;
+        final storedEmail = data['email'] ?? '';
+
+        // Determine available phone number
+        if (!primaryContact.contains('@')) {
+          phone = primaryContact;
+        }
+
+        // Determine available email address
+        if (storedEmail.isNotEmpty) {
+          email = storedEmail;
+        } else if (primaryContact.contains('@')) {
+          email = primaryContact;
+        }
+      }
+    } catch (_) {
+      // Firestore lookup failed — fall through to defaults below
+    }
+
+    // If we couldn't determine channels from the doc, infer from uid
+    phone ??= uid.contains('@') ? null : uid;
+    email ??= uid.contains('@') ? uid : null;
+
+    // Send via preferred channel(s), falling back if preferred isn't available
+    switch (notifMode) {
+      case 'SMS':
+        if (phone != null) {
+          await _sendSms(phone: phone, textBody: textBody);
+        } else if (email != null) {
+          // Prefers SMS but no phone on file — fall back to email
+          await _sendEmail(
+            email: email,
+            subject: subject,
+            textBody: textBody,
+            htmlBody: htmlBody,
+          );
+        }
+        break;
+      case 'Email':
+        if (email != null) {
+          await _sendEmail(
+            email: email,
+            subject: subject,
+            textBody: textBody,
+            htmlBody: htmlBody,
+          );
+        } else if (phone != null) {
+          // Prefers email but no email on file — fall back to SMS
+          await _sendSms(phone: phone, textBody: textBody);
+        }
+        break;
+      case 'Both':
+        final futures = <Future>[];
+        if (phone != null) {
+          futures.add(_sendSms(phone: phone, textBody: textBody));
+        }
+        if (email != null) {
+          futures.add(
+            _sendEmail(
+              email: email,
+              subject: subject,
+              textBody: textBody,
+              htmlBody: htmlBody,
+            ),
+          );
+        }
+        if (futures.isNotEmpty) {
+          await Future.wait(futures, eagerError: false);
+        }
+        break;
+      default:
+        // Unknown mode — send to whatever we have
+        if (phone != null) {
+          await _sendSms(phone: phone, textBody: textBody);
+        } else if (email != null) {
+          await _sendEmail(
+            email: email,
+            subject: subject,
+            textBody: textBody,
+            htmlBody: htmlBody,
+          );
+        }
     }
   }
 
@@ -70,7 +190,7 @@ class NotificationService {
     required Match match,
     required String matchId,
     required String organizerName,
-    required bool isSms, // kept for API compatibility; _send auto-detects too
+    required bool isSms, // kept for API compatibility
   }) async {
     final link = _matchLink(matchId, uid: contact);
     final orgName = cleanName(organizerName);
@@ -102,7 +222,7 @@ class NotificationService {
     """;
 
     await _send(
-      contact: contact,
+      uid: contact,
       subject: 'Tennis Invite: $dateTime',
       textBody: textBody,
       htmlBody: htmlBody,
@@ -140,7 +260,7 @@ class NotificationService {
     }
 
     await _send(
-      contact: contact,
+      uid: contact,
       subject: 'Match Update: Removed from Roster',
       textBody: textBody,
       htmlBody: htmlBody,
@@ -155,8 +275,8 @@ class NotificationService {
     required String playerName,
     String? note,
   }) async {
-    final contact = match.organizerId;
-    if (contact.isEmpty) return;
+    final organizerUid = match.organizerId;
+    if (organizerUid.isEmpty) return;
 
     final dateTime = formatDateTime(match);
     final link = _matchLink(matchId);
@@ -185,7 +305,7 @@ class NotificationService {
     """;
 
     await _send(
-      contact: contact,
+      uid: organizerUid,
       subject: 'Match Update: Player Dropped Out',
       textBody: textBody,
       htmlBody: htmlBody,
@@ -208,7 +328,7 @@ class NotificationService {
         '${_htmlButton(link, 'Join Now')}</p>';
 
     await _send(
-      contact: contact,
+      uid: contact,
       subject: 'URGENT: Tennis Player Needed!',
       textBody: textBody,
       htmlBody: htmlBody,
@@ -250,7 +370,7 @@ class NotificationService {
           player.status == RosterStatus.invited) {
         futures.add(
           _send(
-            contact: player.uid,
+            uid: player.uid,
             subject: 'Match Canceled: $dateStr',
             textBody: textBody,
             htmlBody: htmlBody,
@@ -268,7 +388,7 @@ class NotificationService {
     required String message,
   }) async {
     await _send(
-      contact: contact,
+      uid: contact,
       subject: 'Match Update',
       textBody: message,
       htmlBody: '<p>$message</p>',
@@ -295,7 +415,7 @@ class NotificationService {
         '<p>${_htmlButton(link, 'View Chat')}</p>';
 
     await _send(
-      contact: contact,
+      uid: contact,
       subject: 'New Message in Match Chat',
       textBody: textBody,
       htmlBody: htmlBody,
