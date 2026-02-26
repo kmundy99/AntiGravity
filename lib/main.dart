@@ -266,10 +266,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // =========================================================================
-  // Google Places Autocomplete (New API — supports CORS, no proxy needed)
+  // Google Places Autocomplete — tries New API first, falls back to legacy
   // =========================================================================
   Future<List<String>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
+
+    // 1. Try the Places API (New) — supports CORS natively
     try {
       final response = await http.post(
         Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
@@ -282,14 +284,35 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final suggestions = json['suggestions'] as List? ?? [];
-        return suggestions
+        final results = suggestions
             .where((s) => s['placePrediction'] != null)
             .map((s) => s['placePrediction']['text']['text'] as String)
             .toList();
+        if (results.isNotEmpty) return results;
       }
-    } catch (e) {
-      // Silently fall back to manual typing if API fails
+    } catch (_) {
+      // New API failed (likely API key restrictions) — try legacy below
     }
+
+    // 2. Fallback: legacy Places API via CORS proxy (for web) or direct (mobile)
+    try {
+      final String targetUrl =
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$input&key=$googleMapsApiKey';
+      final url = Uri.parse(
+        kIsWeb
+            ? 'https://corsproxy.io/?${Uri.encodeComponent(targetUrl)}'
+            : targetUrl,
+      );
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final predictions = json['predictions'] as List? ?? [];
+        return predictions.map((p) => p['description'] as String).toList();
+      }
+    } catch (_) {
+      // Both APIs failed — user can still type manually
+    }
+
     return [];
   }
 

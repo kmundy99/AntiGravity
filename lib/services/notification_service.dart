@@ -47,7 +47,7 @@ class NotificationService {
 
   /// Builds the standard deep link for a match, optionally with a uid for auto-login.
   static String _matchLink(String matchId, {String? uid}) {
-    final base = 'https://www.finapps.com/#/match/$matchId';
+    final base = 'https://lexingtontennis.app/match/$matchId';
     if (uid != null && uid.isNotEmpty) {
       return '$base?uid=${Uri.encodeComponent(uid)}';
     }
@@ -148,10 +148,12 @@ class NotificationService {
   }
 
   /// Notifies the match organizer that a player has dropped out.
+  /// Accepts an optional [note] so the player can explain why they're leaving.
   static Future<void> notifyOrganizerDropOut({
     required Match match,
     required String matchId,
     required String playerName,
+    String? note,
   }) async {
     final contact = match.organizerId;
     if (contact.isEmpty) return;
@@ -159,14 +161,23 @@ class NotificationService {
     final dateTime = formatDateTime(match);
     final link = _matchLink(matchId);
 
-    final textBody =
-        "$playerName has removed themselves from your match on $dateTime. "
-        "Open the app to recruit a replacement: $link";
+    var textBody =
+        "$playerName has removed themselves from your match on $dateTime.";
+    if (note != null && note.isNotEmpty) {
+      textBody += " Their note: \"$note\"";
+    }
+    textBody += " Open the app to recruit a replacement: $link";
 
-    final htmlBody =
+    var htmlBody =
         """
       <h3>Match Update: Player Dropped Out</h3>
       <p><b>$playerName</b> has removed themselves from your upcoming match.</p>
+    """;
+    if (note != null && note.isNotEmpty) {
+      htmlBody += "<p><b>Player's note:</b> \"$note\"</p>";
+    }
+    htmlBody +=
+        """
       <p><b>Date & Time:</b> $dateTime</p>
       <p><b>Location:</b> ${match.location}</p>
       <br/>
