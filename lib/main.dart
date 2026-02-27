@@ -80,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// The current user's Firestore document ID (UUID). Replaces old `_myPhone`.
   String? _myUid;
   User? _user;
+  String _cachedDisplayName = 'Player'; // Offline fallback
   bool _isEditingProfile = false;
   bool _isQuickSetup = false;
   final _phoneCtrl = TextEditingController();
@@ -175,46 +176,58 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Looks up a user by their phone or email and returns the Firestore doc ID (UUID).
   /// Returns null if no matching user is found.
   Future<String?> _resolveContactToUid(String normalizedContact) async {
-    // 1. Try primary_contact field
-    var query = await FirebaseFirestore.instance
-        .collection('users')
-        .where('primary_contact', isEqualTo: normalizedContact)
-        .limit(1)
-        .get();
-
-    if (query.docs.isNotEmpty) return query.docs.first.id;
-
-    // 2. Try email or phone field explicitly
-    if (normalizedContact.contains('@')) {
-      query = await FirebaseFirestore.instance
+    try {
+      // 1. Try primary_contact field
+      var query = await FirebaseFirestore.instance
           .collection('users')
-          .where('email', isEqualTo: normalizedContact)
+          .where('primary_contact', isEqualTo: normalizedContact)
           .limit(1)
           .get();
-    } else {
-      query = await FirebaseFirestore.instance
+
+      if (query.docs.isNotEmpty) {
+        return query.docs.first.id;
+      }
+
+      // 2. Try email or phone field explicitly
+      if (normalizedContact.contains('@')) {
+        query = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: normalizedContact)
+            .limit(1)
+            .get();
+      } else {
+        query = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone_number', isEqualTo: normalizedContact)
+            .limit(1)
+            .get();
+      }
+
+      if (query.docs.isNotEmpty) {
+        return query.docs.first.id;
+      }
+
+      // 3. Legacy support: check if a doc exists with the contact as its ID
+      final legacyDoc = await FirebaseFirestore.instance
           .collection('users')
-          .where('phone_number', isEqualTo: normalizedContact)
-          .limit(1)
+          .doc(normalizedContact)
           .get();
+
+      if (legacyDoc.exists) {
+        return legacyDoc.id;
+      }
+
+      return null;
+    } catch (e) {
+      return null;
     }
-
-    if (query.docs.isNotEmpty) return query.docs.first.id;
-
-    // 3. Legacy support: check if a doc exists with the contact as its ID
-    //    (for pre-migration users whose doc ID IS their phone/email)
-    final legacyDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(normalizedContact)
-        .get();
-
-    if (legacyDoc.exists) return legacyDoc.id;
-
-    return null;
   }
 
   void _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Load cached display name for immediate UI display
+    _cachedDisplayName = prefs.getString('user_display_name') ?? 'Player';
 
     // Auto-login via Deep Link — uid param is now a UUID
     if (widget.initialUid != null && widget.initialUid!.isNotEmpty) {
@@ -223,49 +236,82 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final storedUid = prefs.getString('user_uid');
     if (storedUid != null) {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(storedUid)
-          .get();
-      if (doc.exists) {
-        final user = User.fromFirestore(doc);
-        setState(() {
-          _myUid = storedUid;
-          _user = user;
-          _nameCtrl.text = _user?.displayName ?? "";
-          _addressCtrl.text = _user?.address ?? "";
-          _emailCtrl.text = _user?.email ?? "";
-          _phoneFormCtrl.text = _user?.phoneNumber ?? "";
-          _gender =
-              ['Male', 'Female', 'Non-Binary', 'Other'].contains(user.gender)
-              ? user.gender
-              : 'Other';
-          _ntrp = [0.0, 3.0, 3.5, 4.0, 4.5, 5.0].contains(user.ntrpLevel)
-              ? user.ntrpLevel
-              : 3.5;
-          _notifOn = _user?.notifActive ?? true;
-          _notifMode = ['SMS', 'Email', 'Both'].contains(user.notifMode)
-              ? user.notifMode
-              : 'SMS';
-          _isEditingProfile =
-              user.accountStatus == AccountStatus.provisional &&
-              widget.initialMatchId == null;
-        });
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(storedUid)
+            .get();
+        if (doc.exists) {
+          final user = User.fromFirestore(doc);
 
-        // Now that _myUid is set, re-color the calendar
-        _refreshCalendarData();
+          // Cache display name locally for offline fallback
+          await prefs.setString(
+            'user_display_name',
+            user.displayName,
+          );
+          _cachedDisplayName = user.displayName;
 
-        if (widget.initialMatchId != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showMatchDetailsDialog(widget.initialMatchId!);
+          setState(() {
+            _myUid = storedUid;
+            _user = user;
+            _nameCtrl.text = _user?.displayName ?? "";
+            _addressCtrl.text = _user?.address ?? "";
+            _emailCtrl.text = _user?.email ?? "";
+            _phoneFormCtrl.text = _user?.phoneNumber ?? "";
+            _gender =
+                ['Male', 'Female', 'Non-Binary', 'Other'].contains(user.gender)
+                ? user.gender
+                : 'Other';
+            _ntrp = [0.0, 3.0, 3.5, 4.0, 4.5, 5.0].contains(user.ntrpLevel)
+                ? user.ntrpLevel
+                : 3.5;
+            _notifOn = _user?.notifActive ?? true;
+            _notifMode = ['SMS', 'Email', 'Both'].contains(user.notifMode)
+                ? user.notifMode
+                : 'SMS';
+            _isEditingProfile =
+                user.accountStatus == AccountStatus.provisional &&
+                widget.initialMatchId == null;
+          });
+
+          // Now that _myUid is set, re-color the calendar
+          _refreshCalendarData();
+
+
+          if (widget.initialMatchId != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showMatchDetailsDialog(widget.initialMatchId!);
+            });
+          }
+        } else {
+          // Stored UID points to a deleted doc — clear it and show login
+          await prefs.remove('user_uid');
+          await prefs.remove('user_login_contact');
+          await prefs.remove('user_display_name');
+          setState(() {
+            _myUid = null;
           });
         }
-      } else {
-        // Stored UID points to a deleted doc — clear it and show login
-        await prefs.remove('user_uid');
+      } catch (e) {
+        // Firestore failed (offline, etc.) — use cached UID so the user
+        // can at least see their calendar from Firestore's offline cache.
+        final cachedName = prefs.getString('user_display_name') ?? 'Player';
+        _cachedDisplayName = cachedName;
         setState(() {
-          _myUid = null;
+          _myUid = storedUid;
+          // _user stays null but _myUid is set, so calendar colors work
         });
+        _refreshCalendarData();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Offline mode — showing cached data for $cachedName',
+              ),
+            ),
+          );
+        }
       }
     }
   }
@@ -348,7 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Hi, ${_user?.displayName ?? 'Player'}"),
+        title: Text("Hi, ${_user?.displayName ?? _cachedDisplayName}"),
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
         actions: [
@@ -371,14 +417,29 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              // Cancel Firestore listeners FIRST to stop stale data
+              _matchesSub?.cancel();
+              _matchesSub = null;
+              _usersSub?.cancel();
+              _usersSub = null;
+
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove('user_uid');
-              setState(() {
-                _myUid = null;
-                _user = null;
-                _isEditingProfile = false;
-                _isQuickSetup = false;
-              });
+              await prefs.remove('user_display_name');
+              await prefs.remove('user_login_contact');
+
+
+              // Full app restart so the next user starts fresh.
+              // We don't need to clear Firestore's offline cache because
+              // the login flow checks cached contact vs entered contact
+              // and won't reuse a UID meant for a different person.
+              if (context.mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TennisApp()),
+                  (_) => false,
+                );
+              }
             },
             tooltip: 'Logout',
           ),
@@ -449,7 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final bool isInv = roster.any(
         (r) => r['uid'] == _myUid && r['status'] == 'invited',
       );
-      // TEMPORARILY DISABLED: if (!isOrg && !isJnd && !isInv) return false;
+      if (!isOrg && !isJnd && !isInv) return false;
 
       // 1. Show <Player LOV> scheduled matches only
       if (_filterPlayerCtrl.text.trim().isNotEmpty &&
@@ -511,11 +572,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final List roster = List.from(match['roster'] ?? []);
 
-      // DEBUG: Log uid comparison to help diagnose color mismatches.
-      // Check the browser console (F12 → Console) to see these.
+        '[CalendarColor] match="${match['location']}" organizerId="${match['organizerId']}" _myUid="$_myUid"',
+      );
       for (var r in roster) {
-        debugPrint(
-          '[CalendarColor] roster uid="${r['uid']}" status="${r['status']}" | _myUid="$_myUid" | match=${match['location']}',
+          '[CalendarColor]   roster uid="${r['uid']}" status="${r['status']}" displayName="${r['displayName']}"',
         );
       }
 
@@ -526,16 +586,6 @@ class _HomeScreenState extends State<HomeScreen> {
         (r) => r['uid'] == _myUid && r['status'] == 'invited',
       );
       final bool isOrganizer = match['organizerId'] == _myUid;
-
-      debugPrint(
-        '[CalendarColor] ${match['location']}: isOrganizer=$isOrganizer isJoined=$isJoined isInvited=$isInvited → will be ${isOrganizer
-            ? "blue"
-            : isJoined
-            ? "green"
-            : isInvited
-            ? "yellow/red"
-            : "GREY (no match!)"}',
-      );
 
       final int reqCount = match['requiredCount'] ?? 4;
       final int acceptedCount = roster
@@ -1290,32 +1340,76 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (loginId.isEmpty) return;
                   }
 
-                  // Resolve contact → UUID
-                  String? uid = await _resolveContactToUid(loginId);
+                  final prefs = await SharedPreferences.getInstance();
+
+                  // OFFLINE-SAFE: If we previously logged in with this same
+                  // contact and have a cached UID, reuse it without querying
+                  // Firestore. This prevents stale-cache cross-user bugs.
+                  final cachedContact = prefs.getString('user_login_contact');
+                  final cachedUid = prefs.getString('user_uid');
+                  if (cachedContact == loginId &&
+                      cachedUid != null &&
+                      cachedUid.isNotEmpty) {
+                    _loadUser();
+                    return;
+                  }
+
+                  // Resolve contact → UUID (requires Firestore / network)
+                  String? uid;
+                  try {
+                    uid = await _resolveContactToUid(loginId);
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Unable to log in — please check your internet connection and try again.',
+                          ),
+                        ),
+                      );
+                    }
+                    return;
+                  }
 
                   if (uid == null) {
                     // New user — create a doc with auto-generated UUID
-                    final newDocRef = FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(); // auto-ID
+                    // This also requires network; show error if it fails.
+                    try {
+                      final newDocRef = FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(); // auto-ID
 
-                    await newDocRef.set({
-                      'display_name': '',
-                      'primary_contact': loginId,
-                      if (loginId.contains('@'))
-                        'email': loginId
-                      else
-                        'phone_number': loginId,
-                      'accountStatus': 'provisional',
-                      'role': 'player',
-                      'createdAt': FieldValue.serverTimestamp(),
-                    });
+                      await newDocRef.set({
+                        'display_name': '',
+                        'primary_contact': loginId,
+                        if (loginId.contains('@'))
+                          'email': loginId
+                        else
+                          'phone_number': loginId,
+                        'accountStatus': 'provisional',
+                        'role': 'player',
+                        'createdAt': FieldValue.serverTimestamp(),
+                      });
 
-                    uid = newDocRef.id;
+                      uid = newDocRef.id;
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Unable to create account — please check your internet connection.',
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
                   }
 
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('user_uid', uid);
+                  // Cache BOTH the UID and the contact used to resolve it.
+                  // On future logins with the same contact, we skip Firestore.
+                  await prefs.setString('user_uid', uid!);
+                  await prefs.setString('user_login_contact', loginId);
                   _loadUser();
                 },
                 style: ElevatedButton.styleFrom(

@@ -415,6 +415,12 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                                                         await prefs.remove(
                                                           'user_uid',
                                                         );
+                                                        await prefs.remove(
+                                                          'user_login_contact',
+                                                        );
+                                                        await prefs.remove(
+                                                          'user_display_name',
+                                                        );
                                                         Navigator.pop(context);
                                                         ScaffoldMessenger.of(
                                                           context,
