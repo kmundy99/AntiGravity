@@ -69,13 +69,20 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
                     .limit(1)
                     .get();
 
-                if (existingQuery.docs.isEmpty &&
-                    normalizedContact.contains('@')) {
-                  existingQuery = await FirebaseFirestore.instance
-                      .collection('users')
-                      .where('email', isEqualTo: normalizedContact)
-                      .limit(1)
-                      .get();
+                if (existingQuery.docs.isEmpty) {
+                  if (normalizedContact.contains('@')) {
+                    existingQuery = await FirebaseFirestore.instance
+                        .collection('users')
+                        .where('email', isEqualTo: normalizedContact)
+                        .limit(1)
+                        .get();
+                  } else {
+                    existingQuery = await FirebaseFirestore.instance
+                        .collection('users')
+                        .where('phone_number', isEqualTo: normalizedContact)
+                        .limit(1)
+                        .get();
+                  }
                 }
 
                 if (existingQuery.docs.isNotEmpty) {
@@ -102,7 +109,7 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
 
                 if (mounted) Navigator.pop(context);
               },
-              child: const Text('Create Shadow Profile'),
+              child: const Text('Add Custom Player'),
             ),
           ],
         ),

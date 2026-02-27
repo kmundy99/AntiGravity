@@ -184,16 +184,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (query.docs.isNotEmpty) return query.docs.first.id;
 
-    // 2. Try email field
+    // 2. Try email or phone field explicitly
     if (normalizedContact.contains('@')) {
       query = await FirebaseFirestore.instance
           .collection('users')
           .where('email', isEqualTo: normalizedContact)
           .limit(1)
           .get();
-
-      if (query.docs.isNotEmpty) return query.docs.first.id;
+    } else {
+      query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phone_number', isEqualTo: normalizedContact)
+          .limit(1)
+          .get();
     }
+
+    if (query.docs.isNotEmpty) return query.docs.first.id;
 
     // 3. Legacy support: check if a doc exists with the contact as its ID
     //    (for pre-migration users whose doc ID IS their phone/email)
@@ -429,6 +435,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = doc.data() as Map<String, dynamic>;
       final roster = List.from(data['roster'] ?? []);
 
+      // 0. Only show matches where the user is the Organizer, Joined, or Invited
+      final bool isOrg = data['organizerId'] == _myUid;
+      final bool isJnd = roster.any(
+        (r) => r['uid'] == _myUid && r['status'] == 'accepted',
+      );
+      final bool isInv = roster.any(
+        (r) => r['uid'] == _myUid && r['status'] == 'invited',
+      );
+      // TEMPORARILY DISABLED: if (!isOrg && !isJnd && !isInv) return false;
+
       // 1. Show <Player LOV> scheduled matches only
       if (_filterPlayerCtrl.text.trim().isNotEmpty &&
           _filterPlayerCtrl.text.trim().toLowerCase() != 'anyone') {
@@ -491,6 +507,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final bool isJoined = roster.any(
         (r) => r['uid'] == _myUid && r['status'] == 'accepted',
       );
+      final bool isInvited = roster.any(
+        (r) => r['uid'] == _myUid && r['status'] == 'invited',
+      );
       final bool isOrganizer = match['organizerId'] == _myUid;
 
       final int reqCount = match['requiredCount'] ?? 4;
@@ -505,8 +524,10 @@ class _HomeScreenState extends State<HomeScreen> {
         matchColor = isFull ? Colors.blue.shade900 : Colors.blue.shade400;
       } else if (isJoined) {
         matchColor = Colors.green.shade600;
-      } else {
+      } else if (isInvited) {
         matchColor = isFull ? Colors.red.shade400 : Colors.amber.shade600;
+      } else {
+        matchColor = Colors.grey.shade400; // Public / Uninvited
       }
 
       fetchedAppointments.add(
@@ -715,6 +736,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icon(Icons.circle, color: Colors.amber.shade600, size: 12),
                   const SizedBox(width: 4),
                   const Text("Eligible & Open", style: TextStyle(fontSize: 11)),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, color: Colors.grey.shade400, size: 12),
+                  const SizedBox(width: 4),
+                  const Text("Public", style: TextStyle(fontSize: 11)),
                 ],
               ),
               Row(
@@ -1275,7 +1304,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildProfileEditor() {
     return Scaffold(
-      appBar: AppBar(title: const Text("Player Profile")),
+      appBar: AppBar(
+        title: const Text("Player Profile"),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => setState(() => _isEditingProfile = false),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'feedbackBtnProfile',
+        onPressed: () {
+          showFeedbackModal(context, _myUid, _user?.displayName, 'Profile');
+        },
+        backgroundColor: Colors.amber.shade300,
+        foregroundColor: Colors.black87,
+        child: const Icon(Icons.lightbulb_outline),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -1302,6 +1346,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Expanded(
                   child: TypeAheadField<String>(
+                    controller: _addressCtrl,
                     suggestionsCallback: _fetchPlaceSuggestions,
                     itemBuilder: (context, suggestion) {
                       return ListTile(
@@ -1315,14 +1360,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       });
                     },
                     builder: (context, controller, focusNode) {
-                      if (_addressCtrl.text.isNotEmpty &&
-                          controller.text.isEmpty) {
-                        controller.text = _addressCtrl.text;
-                      }
                       return TextField(
                         controller: controller,
                         focusNode: focusNode,
-                        onChanged: (val) => _addressCtrl.text = val,
                         decoration: const InputDecoration(
                           labelText: "Physical Address",
                         ),

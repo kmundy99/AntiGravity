@@ -157,7 +157,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: AddCustomPlayerButton(
-                label: 'Create Shadow Profile',
+                label: 'Add Custom Player',
                 fullWidth: true,
               ),
             ),
