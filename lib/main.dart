@@ -245,10 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final user = User.fromFirestore(doc);
 
           // Cache display name locally for offline fallback
-          await prefs.setString(
-            'user_display_name',
-            user.displayName,
-          );
+          await prefs.setString('user_display_name', user.displayName);
           _cachedDisplayName = user.displayName;
 
           setState(() {
@@ -276,7 +273,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Now that _myUid is set, re-color the calendar
           _refreshCalendarData();
-
 
           if (widget.initialMatchId != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -428,7 +424,6 @@ class _HomeScreenState extends State<HomeScreen> {
               await prefs.remove('user_display_name');
               await prefs.remove('user_login_contact');
 
-
               // Full app restart so the next user starts fresh.
               // We don't need to clear Firestore's offline cache because
               // the login flow checks cached contact vs entered contact
@@ -571,13 +566,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = (match['match_date'] as Timestamp).toDate();
 
       final List roster = List.from(match['roster'] ?? []);
-
-        '[CalendarColor] match="${match['location']}" organizerId="${match['organizerId']}" _myUid="$_myUid"',
-      );
-      for (var r in roster) {
-          '[CalendarColor]   roster uid="${r['uid']}" status="${r['status']}" displayName="${r['displayName']}"',
-        );
-      }
 
       final bool isJoined = roster.any(
         (r) => r['uid'] == _myUid && r['status'] == 'accepted',
