@@ -252,6 +252,9 @@ class _HomeScreenState extends State<HomeScreen> {
               widget.initialMatchId == null;
         });
 
+        // Now that _myUid is set, re-color the calendar
+        _refreshCalendarData();
+
         if (widget.initialMatchId != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _showMatchDetailsDialog(widget.initialMatchId!);
@@ -431,6 +434,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _refreshCalendarData() {
+    // Don't process until the user has loaded — otherwise everything is grey
+    if (_myUid == null) return;
+
     var filteredDocs = _allMatches.where((doc) {
       final data = doc.data() as Map<String, dynamic>;
       final roster = List.from(data['roster'] ?? []);
@@ -504,6 +510,15 @@ class _HomeScreenState extends State<HomeScreen> {
       final date = (match['match_date'] as Timestamp).toDate();
 
       final List roster = List.from(match['roster'] ?? []);
+
+      // DEBUG: Log uid comparison to help diagnose color mismatches.
+      // Check the browser console (F12 → Console) to see these.
+      for (var r in roster) {
+        debugPrint(
+          '[CalendarColor] roster uid="${r['uid']}" status="${r['status']}" | _myUid="$_myUid" | match=${match['location']}',
+        );
+      }
+
       final bool isJoined = roster.any(
         (r) => r['uid'] == _myUid && r['status'] == 'accepted',
       );
@@ -511,6 +526,16 @@ class _HomeScreenState extends State<HomeScreen> {
         (r) => r['uid'] == _myUid && r['status'] == 'invited',
       );
       final bool isOrganizer = match['organizerId'] == _myUid;
+
+      debugPrint(
+        '[CalendarColor] ${match['location']}: isOrganizer=$isOrganizer isJoined=$isJoined isInvited=$isInvited → will be ${isOrganizer
+            ? "blue"
+            : isJoined
+            ? "green"
+            : isInvited
+            ? "yellow/red"
+            : "GREY (no match!)"}',
+      );
 
       final int reqCount = match['requiredCount'] ?? 4;
       final int acceptedCount = roster
@@ -521,13 +546,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
       Color matchColor;
       if (isOrganizer) {
+        // Organizer: dark blue (full, show up!) or light blue (needs players, recruit!)
         matchColor = isFull ? Colors.blue.shade900 : Colors.blue.shade400;
       } else if (isJoined) {
+        // Accepted invite: green — you're confirmed, show up!
         matchColor = Colors.green.shade600;
       } else if (isInvited) {
+        // Invited but haven't accepted yet: yellow (open, join now!) or red (full)
         matchColor = isFull ? Colors.red.shade400 : Colors.amber.shade600;
       } else {
-        matchColor = Colors.grey.shade400; // Public / Uninvited
+        // Not involved in this match
+        matchColor = Colors.grey.shade400;
       }
 
       fetchedAppointments.add(
@@ -706,7 +735,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icon(Icons.circle, color: Colors.blue.shade900, size: 12),
                   const SizedBox(width: 4),
                   const Text(
-                    "Organizing (Full)",
+                    "Your Match — Show Up!",
                     style: TextStyle(fontSize: 11),
                   ),
                 ],
@@ -717,7 +746,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icon(Icons.circle, color: Colors.blue.shade400, size: 12),
                   const SizedBox(width: 4),
                   const Text(
-                    "Organizing (Needs Players)",
+                    "Your Match — Recruit Players",
                     style: TextStyle(fontSize: 11),
                   ),
                 ],
@@ -727,7 +756,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.circle, color: Colors.green.shade600, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Signed Up", style: TextStyle(fontSize: 11)),
+                  const Text(
+                    "Joined — Show Up!",
+                    style: TextStyle(fontSize: 11),
+                  ),
                 ],
               ),
               Row(
@@ -735,15 +767,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.circle, color: Colors.amber.shade600, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Eligible & Open", style: TextStyle(fontSize: 11)),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.circle, color: Colors.grey.shade400, size: 12),
-                  const SizedBox(width: 4),
-                  const Text("Public", style: TextStyle(fontSize: 11)),
+                  const Text(
+                    "Invited — Join Now",
+                    style: TextStyle(fontSize: 11),
+                  ),
                 ],
               ),
               Row(
@@ -751,7 +778,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.circle, color: Colors.red.shade400, size: 12),
                   const SizedBox(width: 4),
-                  const Text("Match Full", style: TextStyle(fontSize: 11)),
+                  const Text(
+                    "Invited — Match Full",
+                    style: TextStyle(fontSize: 11),
+                  ),
                 ],
               ),
             ],
