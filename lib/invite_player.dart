@@ -10,19 +10,7 @@ class InvitePlayerScreen extends StatefulWidget {
 
 class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-
-  /// Cleans the phone number or lowercases the email
-  String _normalizeContact(String input) {
-    String trimmed = input.trim();
-    if (trimmed.contains('@')) {
-      return trimmed.toLowerCase();
-    } else {
-      return trimmed
-          .replaceAll(RegExp(r'[^\d]'), '')
-          .replaceFirst(RegExp(r'^1'), '');
-    }
-  }
+  final _emailController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -40,10 +28,8 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: _phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Email or Phone Number',
-              ),
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: 'Email Address'),
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 32),
@@ -55,34 +41,31 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
               ),
               onPressed: () async {
                 final name = _nameController.text.trim();
-                final phone = _phoneController.text.trim();
+                final email = _emailController.text.trim().toLowerCase();
 
-                if (name.isEmpty || phone.isEmpty) return;
+                if (name.isEmpty || email.isEmpty) return;
+                if (!email.contains('@')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a valid email address'),
+                    ),
+                  );
+                  return;
+                }
 
-                final normalizedContact = _normalizeContact(phone);
-                if (normalizedContact.isEmpty) return;
-
-                // Check if a user with this contact already exists
+                // Check if a user with this email already exists
                 var existingQuery = await FirebaseFirestore.instance
                     .collection('users')
-                    .where('primary_contact', isEqualTo: normalizedContact)
+                    .where('primary_contact', isEqualTo: email)
                     .limit(1)
                     .get();
 
                 if (existingQuery.docs.isEmpty) {
-                  if (normalizedContact.contains('@')) {
-                    existingQuery = await FirebaseFirestore.instance
-                        .collection('users')
-                        .where('email', isEqualTo: normalizedContact)
-                        .limit(1)
-                        .get();
-                  } else {
-                    existingQuery = await FirebaseFirestore.instance
-                        .collection('users')
-                        .where('phone_number', isEqualTo: normalizedContact)
-                        .limit(1)
-                        .get();
-                  }
+                  existingQuery = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('email', isEqualTo: email)
+                      .limit(1)
+                      .get();
                 }
 
                 if (existingQuery.docs.isNotEmpty) {
@@ -93,14 +76,11 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
                     await existingDoc.reference.update({'display_name': name});
                   }
                 } else {
-                  // UUID MIGRATION: Create with auto-generated doc ID
+                  // Create with auto-generated doc ID
                   await FirebaseFirestore.instance.collection('users').add({
                     'display_name': name,
-                    'primary_contact': normalizedContact,
-                    if (normalizedContact.contains('@'))
-                      'email': normalizedContact
-                    else
-                      'phone_number': normalizedContact,
+                    'primary_contact': email,
+                    'email': email,
                     'accountStatus': 'provisional',
                     'role': 'player',
                     'createdAt': FieldValue.serverTimestamp(),

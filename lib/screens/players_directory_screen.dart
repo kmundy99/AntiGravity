@@ -176,285 +176,14 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                         final isMe = docId == widget.currentUserUid;
                         final assignedCircle = currentUser.circleRatings[docId];
 
-                        return ExpansionTile(
-                          leading: CircleAvatar(
-                            child: Text(user.displayName[0].toUpperCase()),
-                          ),
-                          title: Text(
-                            user.displayName + (isMe ? " (You)" : ""),
-                          ),
-                          subtitle: Text(
-                            "NTRP: ${user.ntrpLevel} | ${user.gender}",
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!isMe && assignedCircle != null)
-                                Container(
-                                  margin: const EdgeInsets.only(right: 8),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade100,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    "Circle $assignedCircle",
-                                    style: TextStyle(
-                                      color: Colors.blue.shade900,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              Checkbox(
-                                value: isSelected,
-                                onChanged: (val) {
-                                  setState(() {
-                                    if (val == true) {
-                                      _selectedPlayers.add(docId);
-                                    } else {
-                                      _selectedPlayers.remove(docId);
-                                    }
-                                  });
-                                },
-                              ),
-                              const Icon(Icons.expand_more, color: Colors.grey),
-                            ],
-                          ),
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0,
-                                vertical: 8.0,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "Phone: ${user.phoneNumber.isNotEmpty ? user.phoneNumber : 'Not provided'}",
-                                  ),
-                                  Text(
-                                    "Email: ${user.email.isNotEmpty ? user.email : 'Not provided'}",
-                                  ),
-                                  Text(
-                                    "Address: ${user.address.isNotEmpty ? user.address : 'Not provided'}",
-                                  ),
-                                  Text(
-                                    "Gender: ${user.gender.isNotEmpty ? user.gender : 'Not provided'}",
-                                  ),
-                                  Text(
-                                    "Account Status: ${user.accountStatus.name}",
-                                  ),
-                                  Text(
-                                    "Notifications: ${user.notifActive ? 'ON (${user.notifMode})' : 'OFF'}",
-                                  ),
-                                  if (user.createdAt != null)
-                                    Text(
-                                      "Created: ${user.createdAt!.toDate().toString().split('.')[0]}",
-                                    ),
-                                  if (user.activatedAt != null)
-                                    Text(
-                                      "Activated: ${user.activatedAt!.toDate().toString().split('.')[0]}",
-                                    ),
-                                  if (!isMe) ...[
-                                    const Divider(),
-                                    const Text(
-                                      "Assign to Circle:",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SegmentedButton<int>(
-                                      segments: const [
-                                        ButtonSegment(
-                                          value: 1,
-                                          label: Text('Circle 1'),
-                                        ),
-                                        ButtonSegment(
-                                          value: 2,
-                                          label: Text('Circle 2'),
-                                        ),
-                                        ButtonSegment(
-                                          value: 3,
-                                          label: Text('Circle 3'),
-                                        ),
-                                      ],
-                                      selected: assignedCircle != null
-                                          ? {assignedCircle}
-                                          : <int>{},
-                                      emptySelectionAllowed: true,
-                                      onSelectionChanged: (set) async {
-                                        final newCircle = set.isEmpty
-                                            ? null
-                                            : set.first;
-                                        final targetUid = docId;
-
-                                        final newRatings =
-                                            Map<String, int>.from(
-                                              currentUser.circleRatings,
-                                            );
-                                        if (newCircle == null) {
-                                          newRatings.remove(targetUid);
-                                        } else {
-                                          newRatings[targetUid] = newCircle;
-                                        }
-
-                                        // Write to current user's doc by UUID
-                                        await FirebaseFirestore.instance
-                                            .collection('users')
-                                            .doc(widget.currentUserUid)
-                                            .update({
-                                              'circleRatings': newRatings,
-                                            });
-                                      },
-                                    ),
-                                  ],
-                                  if (isMe) ...[
-                                    const Divider(),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        TextButton.icon(
-                                          icon: const Icon(
-                                            Icons.edit,
-                                            color: Colors.blue,
-                                          ),
-                                          label: const Text("Edit Profile"),
-                                          onPressed: widget.onEditProfile,
-                                        ),
-                                        TextButton.icon(
-                                          icon: const Icon(
-                                            Icons.delete,
-                                            color: Colors.red,
-                                          ),
-                                          label: const Text(
-                                            "Delete Account",
-                                            style: TextStyle(color: Colors.red),
-                                          ),
-                                          onPressed: () {
-                                            showDialog(
-                                              context: context,
-                                              builder: (context) => AlertDialog(
-                                                title: const Text(
-                                                  "Delete Account?",
-                                                ),
-                                                content: const Text(
-                                                  "Are you sure you want to permanently delete your account?",
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context),
-                                                    child: const Text("Cancel"),
-                                                  ),
-                                                  ElevatedButton(
-                                                    style:
-                                                        ElevatedButton.styleFrom(
-                                                          backgroundColor:
-                                                              Colors.red,
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                        ),
-                                                    onPressed: () async {
-                                                      final myUid =
-                                                          widget.currentUserUid;
-
-                                                      final matchesSnapshot =
-                                                          await FirebaseFirestore
-                                                              .instance
-                                                              .collection(
-                                                                'matches',
-                                                              )
-                                                              .get();
-                                                      for (var doc
-                                                          in matchesSnapshot
-                                                              .docs) {
-                                                        final matchData = doc
-                                                            .data();
-
-                                                        if (matchData['organizerId'] ==
-                                                            myUid) {
-                                                          await doc.reference
-                                                              .delete();
-                                                          continue;
-                                                        }
-
-                                                        final roster = List.from(
-                                                          matchData['roster'] ??
-                                                              [],
-                                                        );
-                                                        final initialLength =
-                                                            roster.length;
-                                                        roster.removeWhere(
-                                                          (r) =>
-                                                              r['uid'] == myUid,
-                                                        );
-                                                        if (roster.length <
-                                                            initialLength) {
-                                                          await doc.reference
-                                                              .update({
-                                                                'roster':
-                                                                    roster,
-                                                              });
-                                                        }
-                                                      }
-
-                                                      await FirebaseFirestore
-                                                          .instance
-                                                          .collection('users')
-                                                          .doc(myUid)
-                                                          .delete();
-                                                      if (context.mounted) {
-                                                        final prefs =
-                                                            await SharedPreferences.getInstance();
-                                                        await prefs.remove(
-                                                          'user_uid',
-                                                        );
-                                                        await prefs.remove(
-                                                          'user_login_contact',
-                                                        );
-                                                        await prefs.remove(
-                                                          'user_display_name',
-                                                        );
-                                                        Navigator.pop(context);
-                                                        ScaffoldMessenger.of(
-                                                          context,
-                                                        ).showSnackBar(
-                                                          const SnackBar(
-                                                            content: Text(
-                                                              "Account deleted.",
-                                                            ),
-                                                          ),
-                                                        );
-                                                        Navigator.pushAndRemoveUntil(
-                                                          context,
-                                                          MaterialPageRoute(
-                                                            builder: (context) =>
-                                                                const TennisApp(),
-                                                          ),
-                                                          (route) => false,
-                                                        );
-                                                      }
-                                                    },
-                                                    child: const Text("Delete"),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
+                        return _buildPlayerCard(
+                          context: context,
+                          user: user,
+                          docId: docId,
+                          isMe: isMe,
+                          isSelected: isSelected,
+                          assignedCircle: assignedCircle,
+                          currentUser: currentUser,
                         );
                       },
                     ),
@@ -497,6 +226,350 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
           ],
         );
       },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMPACT PLAYER CARD — replaces the old ExpansionTile
+  // ---------------------------------------------------------------------------
+  Widget _buildPlayerCard({
+    required BuildContext context,
+    required User user,
+    required String docId,
+    required bool isMe,
+    required bool isSelected,
+    required int? assignedCircle,
+    required User currentUser,
+  }) {
+    // Truncate address to city-level for space
+    String shortAddress = '';
+    if (user.address.isNotEmpty) {
+      final parts = user.address.split(',');
+      shortAddress = parts.length > 1
+          ? parts[parts.length - 2].trim()
+          : parts[0].trim();
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          if (!isMe) {
+            setState(() {
+              if (isSelected) {
+                _selectedPlayers.remove(docId);
+              } else {
+                _selectedPlayers.add(docId);
+              }
+            });
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── ROW 1: Avatar + Name + NTRP + Notif icon + Checkbox ──
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: isMe
+                        ? Colors.green.shade100
+                        : Colors.blue.shade100,
+                    child: Text(
+                      user.displayName[0].toUpperCase(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: isMe
+                            ? Colors.green.shade900
+                            : Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.displayName + (isMe ? " (You)" : ""),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          "NTRP ${user.ntrpLevel == 0.0 ? '—' : user.ntrpLevel.toString()}"
+                          " · ${user.gender.isNotEmpty ? user.gender : '—'}",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Notification indicator
+                  Tooltip(
+                    message: user.notifActive
+                        ? 'Notifications ON'
+                        : 'Notifications OFF',
+                    child: Icon(
+                      user.notifActive
+                          ? Icons.notifications_active
+                          : Icons.notifications_off,
+                      size: 22,
+                      color: user.notifActive
+                          ? Colors.green.shade400
+                          : Colors.grey.shade400,
+                    ),
+                  ),
+                  if (!isMe)
+                    Checkbox(
+                      value: isSelected,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedPlayers.add(docId);
+                          } else {
+                            _selectedPlayers.remove(docId);
+                          }
+                        });
+                      },
+                    ),
+                  if (isMe)
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 20),
+                      color: Colors.blue,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: widget.onEditProfile,
+                      tooltip: 'Edit Profile',
+                    ),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              // ── ROW 2: Contact info (compact icons) ──
+              Row(
+                children: [
+                  const SizedBox(width: 54), // indent to align with name
+                  if (user.phoneNumber.isNotEmpty) ...[
+                    Icon(Icons.phone, size: 16, color: Colors.grey.shade500),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        user.phoneNumber,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  if (user.email.isNotEmpty) ...[
+                    Icon(Icons.email, size: 16, color: Colors.grey.shade500),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        user.email,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  if (shortAddress.isNotEmpty) ...[
+                    Icon(Icons.place, size: 16, color: Colors.grey.shade500),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        shortAddress,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+
+              // ── ROW 3: Circle selector (other players) or Delete (me) ──
+              if (!isMe) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const SizedBox(width: 54),
+                    Text(
+                      "Circle:",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _circleChip(1, assignedCircle, docId, currentUser),
+                    const SizedBox(width: 4),
+                    _circleChip(2, assignedCircle, docId, currentUser),
+                    const SizedBox(width: 4),
+                    _circleChip(3, assignedCircle, docId, currentUser),
+                  ],
+                ),
+              ],
+              if (isMe) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const SizedBox(width: 54),
+                    TextButton.icon(
+                      icon: const Icon(
+                        Icons.delete,
+                        size: 16,
+                        color: Colors.red,
+                      ),
+                      label: const Text(
+                        "Delete Account",
+                        style: TextStyle(color: Colors.red, fontSize: 14),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _confirmDeleteAccount(context),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Small circle-number chip — tappable to assign/unassign
+  // ---------------------------------------------------------------------------
+  Widget _circleChip(
+    int circle,
+    int? assignedCircle,
+    String targetUid,
+    User currentUser,
+  ) {
+    final bool isActive = assignedCircle == circle;
+    return InkWell(
+      onTap: () async {
+        final newRatings = Map<String, int>.from(currentUser.circleRatings);
+        if (isActive) {
+          newRatings.remove(targetUid);
+        } else {
+          newRatings[targetUid] = circle;
+        }
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.currentUserUid)
+            .update({'circleRatings': newRatings});
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.blue.shade700 : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          '$circle',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: isActive ? Colors.white : Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DELETE ACCOUNT — extracted from old expansion tile
+  // ---------------------------------------------------------------------------
+  void _confirmDeleteAccount(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Account?"),
+        content: const Text(
+          "Are you sure you want to permanently delete your account?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final myUid = widget.currentUserUid;
+
+              final matchesSnapshot = await FirebaseFirestore.instance
+                  .collection('matches')
+                  .get();
+              for (var doc in matchesSnapshot.docs) {
+                final matchData = doc.data();
+
+                if (matchData['organizerId'] == myUid) {
+                  await doc.reference.delete();
+                  continue;
+                }
+
+                final roster = List.from(matchData['roster'] ?? []);
+                final initialLength = roster.length;
+                roster.removeWhere((r) => r['uid'] == myUid);
+                if (roster.length < initialLength) {
+                  await doc.reference.update({'roster': roster});
+                }
+              }
+
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(myUid)
+                  .delete();
+              if (context.mounted) {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.remove('user_uid');
+                await prefs.remove('user_login_contact');
+                await prefs.remove('user_display_name');
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Account deleted.")),
+                );
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TennisApp()),
+                  (route) => false,
+                );
+              }
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -20,6 +20,7 @@ import 'screens/players_directory_screen.dart';
 import 'screens/match_chat_screen.dart';
 import 'services/notification_service.dart';
 import 'services/match_service.dart';
+import 'utils/email_error_checker.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 
 void main() async {
@@ -94,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _gender = 'Other';
   double _ntrp = 3.5;
   bool _notifOn = true;
-  String _notifMode = 'SMS';
+  String _notifMode = 'Email';
 
   // Calendar State
   final CalendarController _calendarController = CalendarController();
@@ -279,6 +280,13 @@ class _HomeScreenState extends State<HomeScreen> {
               _showMatchDetailsDialog(widget.initialMatchId!);
             });
           }
+
+          // Background check for email delivery failures (e.g. Resend quota)
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              EmailErrorChecker.showBannerIfNeeded(context);
+            }
+          });
         } else {
           // Stored UID points to a deleted doc — clear it and show login
           await prefs.remove('user_uid');
@@ -327,7 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
       email: _isQuickSetup ? '' : _emailCtrl.text,
       phoneNumber: _isQuickSetup ? '' : _phoneFormCtrl.text,
       notifActive: _isQuickSetup ? false : _notifOn,
-      notifMode: _isQuickSetup ? 'SMS' : _notifMode,
+      notifMode: 'Email',
       accountStatus: _isQuickSetup
           ? AccountStatus.provisional
           : AccountStatus.fully_registered,
@@ -1532,24 +1540,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
             SwitchListTile(
-              title: const Text("Notifications Active"),
+              title: const Text("New Match Notifications Active"),
+              subtitle: const Text(
+                "Get notified when you're invited to new matches. "
+                "Match updates always send for matches you're on.",
+              ),
               value: _notifOn,
               onChanged: (v) => setState(() => _notifOn = v),
-            ),
-            const Text(
-              "Notification Preference",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'SMS', label: Text('SMS')),
-                ButtonSegment(value: 'Email', label: Text('Email')),
-                ButtonSegment(value: 'Both', label: Text('Both')),
-              ],
-              selected: {_notifMode},
-              onSelectionChanged: (set) =>
-                  setState(() => _notifMode = set.first),
             ),
           ],
           const SizedBox(height: 40),
