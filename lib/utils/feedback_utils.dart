@@ -59,6 +59,8 @@ void showFeedbackModal(
                   onSelectionChanged: (set) => setModalState(() {
                     type = set.first;
                     aiResponse = "";
+                    description = "";
+                    textController.clear();
                   }),
                 ),
                 const SizedBox(height: 16),
@@ -92,97 +94,113 @@ void showFeedbackModal(
                 SizedBox(
                   width: double.infinity,
                   height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade900,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: isSubmitting
-                        ? null
-                        : () async {
-                            if (description.trim().isEmpty) return;
-                            setModalState(() => isSubmitting = true);
+                  child: aiResponse.isNotEmpty && type == "Help/Question"
+                      ? ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Done"),
+                        )
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade900,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  if (description.trim().isEmpty) return;
+                                  setModalState(() => isSubmitting = true);
 
-                            String finalAiResponse = "";
+                                  String finalAiResponse = "";
 
-                            if (type == "Help/Question") {
-                              try {
-                                final response = await http.post(
-                                  Uri.parse(
-                                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$geminiApiKey',
-                                  ),
-                                  headers: {'Content-Type': 'application/json'},
-                                  body: jsonEncode({
-                                    "system_instruction": {
-                                      "parts": [
-                                        {
-                                          "text":
-                                              AiPrompts.feedbackAssistantGuide,
+                                  if (type == "Help/Question") {
+                                    try {
+                                      final response = await http.post(
+                                        Uri.parse(
+                                          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey',
+                                        ),
+                                        headers: {
+                                          'Content-Type': 'application/json',
                                         },
-                                      ],
-                                    },
-                                    "contents": [
-                                      {
-                                        "parts": [
-                                          {"text": description},
-                                        ],
-                                      },
-                                    ],
-                                  }),
-                                );
+                                        body: jsonEncode({
+                                          "system_instruction": {
+                                            "parts": [
+                                              {
+                                                "text": AiPrompts
+                                                    .feedbackAssistantGuide,
+                                              },
+                                            ],
+                                          },
+                                          "contents": [
+                                            {
+                                              "parts": [
+                                                {"text": description},
+                                              ],
+                                            },
+                                          ],
+                                        }),
+                                      );
 
-                                if (response.statusCode == 200) {
-                                  final data = jsonDecode(response.body);
-                                  finalAiResponse =
-                                      data['candidates'][0]['content']['parts'][0]['text'] ??
-                                      "I'm sorry, I couldn't process that.";
-                                } else {
-                                  finalAiResponse =
-                                      "Error connecting to AI assistant: \${response.statusCode}";
-                                }
+                                      if (response.statusCode == 200) {
+                                        final data = jsonDecode(response.body);
+                                        finalAiResponse =
+                                            data['candidates'][0]['content']['parts'][0]['text'] ??
+                                            "I'm sorry, I couldn't process that.";
+                                      } else {
+                                        finalAiResponse =
+                                            "Error connecting to AI assistant (${response.statusCode}). Please try again.";
+                                      }
 
-                                setModalState(
-                                  () => aiResponse = finalAiResponse,
-                                );
-                              } catch (e) {
-                                setModalState(
-                                  () => aiResponse =
-                                      "Error connecting to AI assistant.",
-                                );
-                              }
-                            }
+                                      setModalState(
+                                        () => aiResponse = finalAiResponse,
+                                      );
+                                    } catch (e) {
+                                      setModalState(
+                                        () => aiResponse =
+                                            "Error connecting to AI assistant.",
+                                      );
+                                    }
+                                  }
 
-                            await FirebaseFirestore.instance
-                                .collection('feedbacks')
-                                .add({
-                                  'userId': userId,
-                                  'displayName': displayName,
-                                  'type': type,
-                                  'description': description,
-                                  'aiResponse': finalAiResponse,
-                                  'screenContext': screenContext,
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                });
+                                  await FirebaseFirestore.instance
+                                      .collection('feedbacks')
+                                      .add({
+                                        'userId': userId,
+                                        'displayName': displayName,
+                                        'type': type,
+                                        'description': description,
+                                        'aiResponse': finalAiResponse,
+                                        'screenContext': screenContext,
+                                        'createdAt':
+                                            FieldValue.serverTimestamp(),
+                                      });
 
-                            setModalState(() => isSubmitting = false);
+                                  setModalState(() => isSubmitting = false);
 
-                            if (type != "Help/Question") {
-                              if (context.mounted) {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      "Feedback Logged! Thank you.",
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: isSubmitting
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text("Submit"),
-                  ),
+                                  if (type != "Help/Question") {
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            "Feedback Logged! Thank you.",
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: isSubmitting
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                )
+                              : Text("Submit"),
+                        ),
                 ),
                 const SizedBox(height: 20),
               ],

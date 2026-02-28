@@ -21,6 +21,7 @@ import 'screens/match_chat_screen.dart';
 import 'services/notification_service.dart';
 import 'services/match_service.dart';
 import 'utils/email_error_checker.dart';
+import 'utils/calendar_export.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 
 void main() async {
@@ -1254,6 +1255,22 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text("Close"),
           ),
+          if (isJoined || isOrganizer) ...[
+            IconButton(
+              icon: Icon(Icons.event, color: Colors.blue.shade700),
+              tooltip: 'Add to Google Calendar',
+              onPressed: () {
+                CalendarExport.addToGoogleCalendar(context, match);
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.download, color: Colors.grey.shade700),
+              tooltip: 'Download .ics (Outlook, Apple, etc.)',
+              onPressed: () {
+                CalendarExport.downloadIcsFile(context, match);
+              },
+            ),
+          ],
           if (isOrganizer)
             ElevatedButton(
               style: ElevatedButton.styleFrom(
