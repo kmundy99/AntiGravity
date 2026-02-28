@@ -48,6 +48,34 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
         });
   }
 
+  /// Checks if the organizer has unread chat messages for this match.
+  Future<bool> _hasUnreadChat() async {
+    if (_match == null) return false;
+    try {
+      final matchDoc = await FirebaseFirestore.instance
+          .collection('matches')
+          .doc(widget.matchId)
+          .get();
+      final matchData = matchDoc.data() as Map<String, dynamic>?;
+      final lastMessageAt = matchData?['lastMessageAt'] as Timestamp?;
+      if (lastMessageAt == null) return false;
+
+      final readDoc = await FirebaseFirestore.instance
+          .collection('matches')
+          .doc(widget.matchId)
+          .collection('chatReads')
+          .doc(_match!.organizerId)
+          .get();
+      if (!readDoc.exists) return true;
+      final readAt = readDoc.data()?['readAt'] as Timestamp?;
+      if (readAt == null) return true;
+      return lastMessageAt.millisecondsSinceEpoch >
+          readAt.millisecondsSinceEpoch;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _removePlayer(Roster player) {
     showDialog(
       context: context,
@@ -90,10 +118,10 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                         .displayName;
 
                     await NotificationService.sendRemoval(
-                      contact: player.uid, // UUID
+                      contact: player.uid,
                       match: _match!,
                       organizerName: orgName,
-                      isSms: false, // _send() handles routing
+                      isSms: false,
                       reason: reasonCtrl.text,
                     );
                   }
@@ -261,30 +289,48 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
             runSpacing: 8.0,
             alignment: WrapAlignment.center,
             children: [
-              ElevatedButton.icon(
-                icon: const Icon(Icons.chat),
-                label: const Text("Match Chat"),
-                onPressed: () {
-                  final orgName = _match!.roster
-                      .firstWhere(
-                        (r) => r.uid == _match!.organizerId,
-                        orElse: () => Roster(
-                          uid: '',
-                          displayName: 'Organizer',
-                          status: RosterStatus.accepted,
-                        ),
-                      )
-                      .displayName;
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => MatchChatScreen(
-                        matchId: widget.matchId,
-                        currentUserId: _match!.organizerId, // UUID
-                        currentUserName: orgName,
-                      ),
+              // ── Chat button with unread badge ──
+              FutureBuilder<bool>(
+                future: _hasUnreadChat(),
+                builder: (context, snapshot) {
+                  final hasUnread = snapshot.data ?? false;
+                  return ElevatedButton.icon(
+                    icon: Badge(
+                      isLabelVisible: hasUnread,
+                      backgroundColor: Colors.red,
+                      smallSize: 10,
+                      child: const Icon(Icons.chat),
                     ),
+                    label: Text(hasUnread ? "Match Chat (new!)" : "Match Chat"),
+                    style: hasUnread
+                        ? ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade100,
+                            foregroundColor: Colors.orange.shade900,
+                          )
+                        : null,
+                    onPressed: () {
+                      final orgName = _match!.roster
+                          .firstWhere(
+                            (r) => r.uid == _match!.organizerId,
+                            orElse: () => Roster(
+                              uid: '',
+                              displayName: 'Organizer',
+                              status: RosterStatus.accepted,
+                            ),
+                          )
+                          .displayName;
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MatchChatScreen(
+                            matchId: widget.matchId,
+                            currentUserId: _match!.organizerId,
+                            currentUserName: orgName,
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -297,7 +343,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (context) => SelectPlayersScreen(
-                        currentUserUid: _match!.organizerId, // UUID
+                        currentUserUid: _match!.organizerId,
                         alreadyInRosterUids: _match!.roster
                             .map((r) => r.uid)
                             .toList(),

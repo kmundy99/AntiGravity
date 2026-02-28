@@ -112,6 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<QueryDocumentSnapshot> _allMatches = [];
   List<String> _allUsers = [];
+
+  /// Cached read-timestamps so _refreshCalendarData can check unread chats synchronously.
+  Map<String, Timestamp?> _chatReadTimestamps = {};
   StreamSubscription<QuerySnapshot>? _matchesSub;
   StreamSubscription<QuerySnapshot>? _usersSub;
   late _MeetingDataSource _calendarDataSource;
@@ -137,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _allMatches = snap.docs;
           });
+          _loadChatReads(snap.docs);
           _refreshCalendarData();
         });
 
@@ -272,7 +276,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 widget.initialMatchId == null;
           });
 
-          // Now that _myUid is set, re-color the calendar
+          // Now that _myUid is set, load chat reads and re-color the calendar
+          _loadChatReads(_allMatches);
           _refreshCalendarData();
 
           if (widget.initialMatchId != null) {
@@ -497,6 +502,46 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Loads the current user's chat-read timestamps for all visible matches.
+  /// Runs asynchronously; when done, re-renders the calendar with badges.
+  void _loadChatReads(List<QueryDocumentSnapshot> matchDocs) async {
+    if (_myUid == null) return;
+
+    final newTimestamps = <String, Timestamp?>{};
+    final futures = <Future>[];
+
+    for (final doc in matchDocs) {
+      final matchData = doc.data() as Map<String, dynamic>;
+      // Only bother loading for matches that have chat activity
+      if (matchData['lastMessageAt'] == null) continue;
+
+      futures.add(
+        FirebaseFirestore.instance
+            .collection('matches')
+            .doc(doc.id)
+            .collection('chatReads')
+            .doc(_myUid)
+            .get()
+            .then((readDoc) {
+              if (readDoc.exists) {
+                newTimestamps[doc.id] = readDoc.data()?['readAt'] as Timestamp?;
+              } else {
+                newTimestamps[doc.id] = null; // never read
+              }
+            })
+            .catchError((_) {}),
+      );
+    }
+
+    await Future.wait(futures, eagerError: false);
+
+    if (!mounted) return;
+    setState(() {
+      _chatReadTimestamps = newTimestamps;
+    });
+    _refreshCalendarData();
+  }
+
   void _refreshCalendarData() {
     // Don't process until the user has loaded — otherwise everything is grey
     if (_myUid == null) return;
@@ -605,14 +650,28 @@ class _HomeScreenState extends State<HomeScreen> {
         matchColor = Colors.grey.shade400;
       }
 
+      // Check for unread chat messages
+      final lastMessageAt = match['lastMessageAt'] as Timestamp?;
+      bool hasUnreadChat = false;
+      if (lastMessageAt != null && (isJoined || isOrganizer)) {
+        final readAt = _chatReadTimestamps[doc.id];
+        if (readAt == null ||
+            lastMessageAt.millisecondsSinceEpoch >
+                readAt.millisecondsSinceEpoch) {
+          hasUnreadChat = true;
+        }
+      }
+
+      final String spotLabel = isFull ? 'Full' : '$spotsOpen Spots';
+      final String chatBadge = hasUnreadChat ? '💬 ' : '';
+
       fetchedAppointments.add(
         Appointment(
           startTime: date,
           endTime: match['end_time'] != null
               ? (match['end_time'] as Timestamp).toDate()
               : date.add(const Duration(hours: 1, minutes: 30)),
-          subject:
-              "${match['location'] ?? 'Court'} (${isFull ? 'Full' : '$spotsOpen Spots'})",
+          subject: "$chatBadge${match['location'] ?? 'Court'} ($spotLabel)",
           color: matchColor,
           id: doc.id,
           notes: doc.id,
@@ -969,6 +1028,33 @@ class _HomeScreenState extends State<HomeScreen> {
     final match = Match.fromFirestore(docSnapshot);
     final date = match.matchDate;
 
+    // ── Check for unread chat messages ──
+    bool hasUnreadChat = false;
+    try {
+      final matchData = docSnapshot.data() as Map<String, dynamic>;
+      final lastMessageAt = matchData['lastMessageAt'] as Timestamp?;
+      if (lastMessageAt != null && _myUid != null) {
+        final readDoc = await FirebaseFirestore.instance
+            .collection('matches')
+            .doc(matchId)
+            .collection('chatReads')
+            .doc(_myUid)
+            .get();
+        if (!readDoc.exists) {
+          hasUnreadChat = true; // never opened chat
+        } else {
+          final readAt = readDoc.data()?['readAt'] as Timestamp?;
+          if (readAt == null ||
+              lastMessageAt.millisecondsSinceEpoch >
+                  readAt.millisecondsSinceEpoch) {
+            hasUnreadChat = true;
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore — just don't show badge
+    }
+
     Roster? myRosterEntry;
     for (var r in match.roster) {
       if (r.uid == _myUid) {
@@ -1174,29 +1260,41 @@ class _HomeScreenState extends State<HomeScreen> {
                 backgroundColor: Colors.purple.shade500,
                 foregroundColor: Colors.white,
               ),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) =>
                         OrganizerDashboardScreen(matchId: matchId),
                   ),
                 );
+                // Re-fetch chat reads — they may or may not have opened chat
+                // from the dashboard, so we can't assume they've read it.
+                _loadChatReads(_allMatches);
               },
               child: const Text("Manage (Organizer)"),
             ),
           if (isJoined || isOrganizer)
             ElevatedButton.icon(
-              icon: const Icon(Icons.chat),
-              label: const Text("Match Chat"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade100,
-                foregroundColor: Colors.blue.shade900,
+              icon: Badge(
+                isLabelVisible: hasUnreadChat,
+                backgroundColor: Colors.red,
+                smallSize: 10,
+                child: const Icon(Icons.chat),
               ),
-              onPressed: () {
+              label: Text(hasUnreadChat ? "Match Chat (new!)" : "Match Chat"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: hasUnreadChat
+                    ? Colors.orange.shade100
+                    : Colors.blue.shade100,
+                foregroundColor: hasUnreadChat
+                    ? Colors.orange.shade900
+                    : Colors.blue.shade900,
+              ),
+              onPressed: () async {
                 Navigator.pop(context);
-                Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => MatchChatScreen(
@@ -1206,6 +1304,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 );
+                // Set a future-padded local timestamp to guarantee 💬 clears
+                // despite any client/server clock skew. The next _loadChatReads
+                // from the matches stream will normalize it to the real value.
+                _chatReadTimestamps[matchId] =
+                    Timestamp.fromMillisecondsSinceEpoch(
+                      DateTime.now().millisecondsSinceEpoch + 60000,
+                    );
+                _refreshCalendarData();
               },
             ),
           if (isInvited)

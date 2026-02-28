@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/feedback_utils.dart';
-import '../services/notification_service.dart';
 
 class MatchChatScreen extends StatefulWidget {
   final String matchId;
@@ -22,50 +21,49 @@ class MatchChatScreen extends StatefulWidget {
 class _MatchChatScreenState extends State<MatchChatScreen> {
   final TextEditingController _msgCtrl = TextEditingController();
 
+  @override
+  void initState() {
+    super.initState();
+    // Mark chat as read when opened
+    _markAsRead();
+  }
+
+  /// Writes a read-timestamp so the app knows this user has seen all messages.
+  void _markAsRead() {
+    FirebaseFirestore.instance
+        .collection('matches')
+        .doc(widget.matchId)
+        .collection('chatReads')
+        .doc(widget.currentUserId)
+        .set({'readAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+  }
+
   void _sendMessage() async {
     if (_msgCtrl.text.isEmpty) return;
 
     final text = _msgCtrl.text;
+    _msgCtrl.clear();
 
+    // Write the chat message
     await FirebaseFirestore.instance
         .collection('matches')
         .doc(widget.matchId)
         .collection('messages')
         .add({
           'text': text,
-          'senderId': widget.currentUserId, // UUID
+          'senderId': widget.currentUserId,
           'senderName': widget.currentUserName,
           'timestamp': FieldValue.serverTimestamp(),
         });
 
-    _msgCtrl.clear();
+    // Stamp the match doc so unread badges can compare against it
+    await FirebaseFirestore.instance
+        .collection('matches')
+        .doc(widget.matchId)
+        .update({'lastMessageAt': FieldValue.serverTimestamp()});
 
-    try {
-      final matchDoc = await FirebaseFirestore.instance
-          .collection('matches')
-          .doc(widget.matchId)
-          .get();
-      if (matchDoc.exists) {
-        final matchData = matchDoc.data() as Map<String, dynamic>;
-        final roster = matchData['roster'] as List<dynamic>? ?? [];
-
-        for (var p in roster) {
-          final r = p as Map<String, dynamic>;
-          final uid = r['uid'] as String? ?? '';
-          // Notify all roster members except the sender
-          if (uid != widget.currentUserId && uid.isNotEmpty) {
-            NotificationService.sendChatNotification(
-              contact: uid, // UUID — _send() looks up contact info
-              matchId: widget.matchId,
-              senderName: widget.currentUserName,
-              messagePreview: text,
-            );
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to send chat notifications: $e');
-    }
+    // Update our own read marker so we don't badge our own messages
+    _markAsRead();
   }
 
   @override
@@ -105,6 +103,12 @@ class _MatchChatScreenState extends State<MatchChatScreen> {
                 }
 
                 final docs = snapshot.data!.docs;
+
+                // Keep read marker fresh as new messages stream in
+                if (docs.isNotEmpty) {
+                  _markAsRead();
+                }
+
                 return ListView.builder(
                   reverse: true,
                   itemCount: docs.length,
