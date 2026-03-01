@@ -1,12 +1,18 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onRequest } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const twilio = require("twilio");
 
 const firestore = require("firebase-admin/firestore");
 
 initializeApp();
+
+// =============================================================================
+// TWILIO SMS
+// =============================================================================
 
 exports.sendTwilioMessage = onDocumentCreated("messages/{messageId}", async (event) => {
     const snap = event.data;
@@ -66,6 +72,10 @@ exports.sendTwilioMessage = onDocumentCreated("messages/{messageId}", async (eve
         });
     }
 });
+
+// =============================================================================
+// SENDGRID EMAIL
+// =============================================================================
 
 exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
     // Initialize SendGrid lazily inside the function execution
@@ -137,3 +147,69 @@ exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
         });
     }
 });
+
+// =============================================================================
+// GEMINI AI — called by the feedback assistant in the app
+// The API key is stored in Google Cloud Secret Manager, NOT in client code.
+// =============================================================================
+
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+exports.askGemini = onRequest(
+    {
+        secrets: [geminiApiKey],
+        cors: [
+            "https://finapps.com",
+            "https://www.finapps.com",
+            "http://localhost:5000",
+            "http://localhost:8080",
+        ],
+    },
+    async (req, res) => {
+        if (req.method !== "POST") {
+            res.status(405).json({ error: "Method not allowed" });
+            return;
+        }
+
+        const { description, systemPrompt } = req.body;
+
+        if (!description || description.trim() === "") {
+            res.status(400).json({ error: "Missing description" });
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey.value()}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        system_instruction: {
+                            parts: [{ text: systemPrompt || "" }],
+                        },
+                        contents: [
+                            {
+                                parts: [{ text: description }],
+                            },
+                        ],
+                    }),
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                const aiText =
+                    data.candidates?.[0]?.content?.parts?.[0]?.text ||
+                    "I'm sorry, I couldn't process that.";
+                res.status(200).json({ response: aiText });
+            } else {
+                logger.error("Gemini API error:", response.status);
+                res.status(500).json({ error: "AI service error" });
+            }
+        } catch (error) {
+            logger.error("Cloud Function error:", error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    }
+);

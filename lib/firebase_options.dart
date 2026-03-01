@@ -50,7 +50,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCqkcvc4e5hZBNWMtsD60RaWhOpraZFTOg',
+    apiKey: 'AIzaSyArBWCfYPGcc8R1dj_h_QPpk4fWxhbHdKM',
     appId: '1:158644429203:web:85ac33ea61ced29fa10866',
     messagingSenderId: '158644429203',
     projectId: 'tennis-app-mp-2026',
@@ -60,7 +60,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCvrr5m5l5JumWuuHS6vYhdaLe2AheESNA',
+    apiKey: 'AIzaSyBVg9ZQCwHcafjXqX-kk73f3kIcs0oVsa8',
     appId: '1:158644429203:android:c6c2af2910ebc52ea10866',
     messagingSenderId: '158644429203',
     projectId: 'tennis-app-mp-2026',
