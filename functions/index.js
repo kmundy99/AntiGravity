@@ -2,7 +2,9 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
+const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { defineSecret } = require("firebase-functions/params");
+const { CloudBillingClient } = require("@google-cloud/billing");
 const logger = require("firebase-functions/logger");
 const twilio = require("twilio");
 
@@ -180,7 +182,7 @@ exports.askGemini = onRequest(
 
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey.value()}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey.value()}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -213,3 +215,50 @@ exports.askGemini = onRequest(
         }
     }
 );
+
+// =============================================================================
+// BUDGET ALERTS
+// =============================================================================
+
+// Initialize the Billing Client
+const billing = new CloudBillingClient();
+
+exports.disableBillingOnBudgetExceeded = onMessagePublished("budget-alerts", async (event) => {
+    try {
+        const pubsubData = event.data.message.data;
+        const msgStr = Buffer.from(pubsubData, 'base64').toString('utf8');
+        const pubsubMessage = JSON.parse(msgStr);
+
+        const costAmount = parseFloat(pubsubMessage.costAmount);
+        const budgetAmount = parseFloat(pubsubMessage.budgetAmount);
+
+        if (costAmount <= budgetAmount) {
+            logger.log(`Cost ${costAmount} is within budget ${budgetAmount}.`);
+            return;
+        }
+
+        const projectId = "finapps";
+        const projectName = `projects/${projectId}`;
+
+        logger.warn(`Cost ${costAmount} exceeded budget ${budgetAmount}! Disabling billing for ${projectName}...`);
+
+        const [billingInfo] = await billing.getProjectBillingInfo({ name: projectName });
+
+        if (!billingInfo.billingEnabled) {
+            logger.log("Billing is already disabled.");
+            return;
+        }
+
+        // To disable billing for a project, update the project billing info with an empty string for the billing account name.
+        const [res] = await billing.updateProjectBillingInfo({
+            name: projectName,
+            projectBillingInfo: {
+                billingAccountName: ''
+            }
+        });
+
+        logger.log("Billing successfully disabled: ", res);
+    } catch (error) {
+        logger.error("Failed to process budget alert and disable billing:", error);
+    }
+});

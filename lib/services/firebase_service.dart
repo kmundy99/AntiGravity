@@ -30,4 +30,10 @@ class FirebaseService {
       return snapshot.docs.map((doc) => Match.fromFirestore(doc)).toList();
     });
   }
+
+  Stream<List<User>> getAllUsersStream() {
+    return _db.collection('users').snapshots().map(
+      (snap) => snap.docs.map((d) => User.fromFirestore(d)).toList(),
+    );
+  }
 }

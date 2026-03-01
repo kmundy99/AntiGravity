@@ -2,6 +2,26 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AccountStatus { provisional, fully_registered }
 
+class BlackoutPeriod {
+  final DateTime start;
+  final DateTime end;
+  final String? reason;
+
+  BlackoutPeriod({required this.start, required this.end, this.reason});
+
+  factory BlackoutPeriod.fromMap(Map<String, dynamic> map) => BlackoutPeriod(
+    start: (map['start'] as Timestamp).toDate(),
+    end: (map['end'] as Timestamp).toDate(),
+    reason: map['reason'] as String?,
+  );
+
+  Map<String, dynamic> toMap() => {
+    'start': Timestamp.fromDate(start),
+    'end': Timestamp.fromDate(end),
+    if (reason != null && reason!.isNotEmpty) 'reason': reason,
+  };
+}
+
 class User {
   /// Firestore document ID — a stable UUID, NOT the phone/email.
   final String uid;
@@ -18,6 +38,8 @@ class User {
   final Map<String, int> circleRatings;
   final Timestamp? createdAt;
   final Timestamp? activatedAt;
+  final Map<String, List<String>> weeklyAvailability;
+  final List<BlackoutPeriod> blackouts;
 
   User({
     this.uid = '',
@@ -34,6 +56,8 @@ class User {
     this.circleRatings = const {},
     this.createdAt,
     this.activatedAt,
+    this.weeklyAvailability = const {},
+    this.blackouts = const [],
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
@@ -67,6 +91,20 @@ class User {
           {},
       createdAt: data['created_at'] as Timestamp?,
       activatedAt: data['activated_at'] as Timestamp?,
+      weeklyAvailability: () {
+        final raw = data['weekly_availability'] as Map<String, dynamic>?;
+        if (raw == null) return <String, List<String>>{};
+        return raw.map(
+          (day, periods) => MapEntry(day, List<String>.from(periods as List)),
+        );
+      }(),
+      blackouts:
+          (data['blackouts'] as List<dynamic>?)
+              ?.map(
+                (e) => BlackoutPeriod.fromMap(Map<String, dynamic>.from(e)),
+              )
+              .toList() ??
+          [],
     );
   }
 
@@ -85,6 +123,8 @@ class User {
       'circleRatings': circleRatings,
       if (createdAt != null) 'created_at': createdAt,
       if (activatedAt != null) 'activated_at': activatedAt,
+      if (weeklyAvailability.isNotEmpty) 'weekly_availability': weeklyAvailability,
+      'blackouts': blackouts.map((b) => b.toMap()).toList(),
     };
   }
 }

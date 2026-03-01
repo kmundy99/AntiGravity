@@ -53,6 +53,7 @@ class NotificationService {
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
+        if (data['notif_active'] == false) return;
         notifMode = data['notif_mode'] ?? notifMode;
 
         final primaryContact = data['primary_contact'] ?? '';

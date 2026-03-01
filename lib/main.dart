@@ -22,6 +22,7 @@ import 'services/notification_service.dart';
 import 'services/match_service.dart';
 import 'utils/email_error_checker.dart';
 import 'utils/calendar_export.dart';
+import 'utils/availability_utils.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 
 void main() async {
@@ -97,6 +98,8 @@ class _HomeScreenState extends State<HomeScreen> {
   double _ntrp = 3.5;
   bool _notifOn = true;
   String _notifMode = 'Email';
+  Map<String, List<String>> _weeklyAvailability = {};
+  List<BlackoutPeriod> _blackouts = [];
 
   // Calendar State
   final CalendarController _calendarController = CalendarController();
@@ -113,6 +116,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<QueryDocumentSnapshot> _allMatches = [];
   List<String> _allUsers = [];
+  List<User> _allUsersData = [];
+  DateTime? _selectedSlot;
+
+  // Draggable feedback FAB position
+  Offset? _feedbackBtnOffset;
+
+  // Sidebar filters & player selection
+  double? _sidebarNtrpFilter;
+  int? _sidebarCircleFilter;
+  Set<String> _selectedPlayerUids = {};
 
   /// Cached read-timestamps so _refreshCalendarData can check unread chats synchronously.
   Map<String, Timestamp?> _chatReadTimestamps = {};
@@ -120,10 +133,24 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<QuerySnapshot>? _usersSub;
   late _MeetingDataSource _calendarDataSource;
 
+  static const _avDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  static const _avDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _avPeriods = ['morning', 'afternoon', 'evening'];
+  static const _avPeriodLabels = ['Morn', 'Aft', 'Eve'];
+  static const _avPeriodTimeLabels = ['5am–Noon', 'Noon–5pm', '5pm–11pm'];
+
   @override
   void initState() {
     super.initState();
     _calendarDataSource = _MeetingDataSource(<Appointment>[]);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _feedbackBtnOffset == null) {
+        final size = MediaQuery.of(context).size;
+        setState(() {
+          _feedbackBtnOffset = Offset(size.width - 72, size.height - 200);
+        });
+      }
+    });
     _loadUser();
 
     _matchesSub = FirebaseFirestore.instance
@@ -151,12 +178,13 @@ class _HomeScreenState extends State<HomeScreen> {
         .listen((snap) {
           if (!mounted) return;
           setState(() {
-            _allUsers = snap.docs
-                .map((d) => d['display_name'].toString())
-                .where((name) => name.trim().isNotEmpty)
-                .toSet()
-                .toList();
-            _allUsers.sort();
+            final users = snap.docs
+                .map((d) => User.fromFirestore(d))
+                .where((u) => u.displayName.trim().isNotEmpty)
+                .toList()
+              ..sort((a, b) => a.displayName.compareTo(b.displayName));
+            _allUsersData = users;
+            _allUsers = users.map((u) => u.displayName).toSet().toList()..sort();
           });
         });
   }
@@ -272,6 +300,18 @@ class _HomeScreenState extends State<HomeScreen> {
             _notifMode = ['SMS', 'Email', 'Both'].contains(user.notifMode)
                 ? user.notifMode
                 : 'SMS';
+            _weeklyAvailability = Map<String, List<String>>.from(
+              user.weeklyAvailability.map(
+                (k, v) => MapEntry(k, List<String>.from(v)),
+              ),
+            );
+            // Default to all slots checked if the user has never set availability
+            if (_weeklyAvailability.isEmpty) {
+              _weeklyAvailability = {
+                for (final day in _avDays) day: List<String>.from(_avPeriods),
+              };
+            }
+            _blackouts = List<BlackoutPeriod>.from(user.blackouts);
             _isEditingProfile =
                 user.accountStatus == AccountStatus.provisional &&
                 widget.initialMatchId == null;
@@ -347,6 +387,8 @@ class _HomeScreenState extends State<HomeScreen> {
           : AccountStatus.fully_registered,
       createdAt: _user?.createdAt ?? Timestamp.now(),
       activatedAt: Timestamp.now(),
+      weeklyAvailability: _weeklyAvailability,
+      blackouts: _blackouts,
     );
 
     await FirebaseFirestore.instance
@@ -356,6 +398,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() => _isEditingProfile = false);
     _loadUser();
+  }
+
+  Future<void> _pickBlackout() async {
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (range == null || !mounted) return;
+
+    final reasonCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Blackout Reason (optional)"),
+        content: TextField(
+          controller: reasonCtrl,
+          decoration: const InputDecoration(hintText: "e.g. Vacation, Travel"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Add"),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      setState(() {
+        _blackouts.add(
+          BlackoutPeriod(
+            start: range.start,
+            end: range.end,
+            reason: reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
+          ),
+        );
+      });
+    }
   }
 
   Future<void> _launchMap() async {
@@ -454,21 +540,33 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'feedbackBtn',
-        onPressed: () {
-          final tabs = ["Upcoming", "Players", "History"];
-          final currentTab = tabs[_selectedIndex];
-          showFeedbackModal(context, _myUid, _user?.displayName, currentTab);
-        },
-        backgroundColor: Colors.amber.shade300,
-        foregroundColor: Colors.black87,
-        child: const Icon(Icons.lightbulb_outline),
+      body: Stack(
+        children: [
+          _buildBody(),
+          if (_feedbackBtnOffset != null)
+            _buildDraggableFab(
+              offset: _feedbackBtnOffset!,
+              onPressed: () {
+                final tabs = ["Upcoming", "Players", "History"];
+                showFeedbackModal(
+                  context,
+                  _myUid,
+                  _user?.displayName,
+                  tabs[_selectedIndex],
+                );
+              },
+            ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) => setState(() {
+          _selectedIndex = index;
+          if (index != 0) {
+            _selectedSlot = null;
+            _selectedPlayerUids = {};
+          }
+        }),
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
@@ -501,6 +599,42 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  /// Draggable feedback/lightbulb button that can be repositioned by the user.
+  Widget _buildDraggableFab({
+    required Offset offset,
+    required VoidCallback onPressed,
+  }) {
+    return Positioned(
+      left: offset.dx,
+      top: offset.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          final size = MediaQuery.of(context).size;
+          setState(() {
+            _feedbackBtnOffset = Offset(
+              (offset.dx + details.delta.dx).clamp(0.0, size.width - 56),
+              (offset.dy + details.delta.dy).clamp(0.0, size.height - 120),
+            );
+          });
+        },
+        child: Material(
+          elevation: 6,
+          shape: const CircleBorder(),
+          color: Colors.amber.shade300,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: const SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(Icons.lightbulb_outline, color: Colors.black87),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Loads the current user's chat-read timestamps for all visible matches.
@@ -931,65 +1065,61 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
 
         Expanded(
-          child: SfCalendar(
-            view: _currentCalendarView,
-            controller: _calendarController,
-            showNavigationArrow: true,
-            showDatePickerButton: true,
-            dataSource: _calendarDataSource,
-            timeSlotViewSettings: const TimeSlotViewSettings(
-              startHour: 0,
-              endHour: 24,
-            ),
-            monthViewSettings: const MonthViewSettings(
-              showAgenda: false,
-              appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
-            ),
-            onTap: (CalendarTapDetails details) {
-              if (details.appointments != null &&
-                  details.appointments!.isNotEmpty) {
-                final Appointment appt = details.appointments!.first;
-                final docId = appt.notes;
-                if (docId != null) {
-                  _showMatchDetailsDialog(docId);
-                }
-              } else if (details.targetElement ==
-                  CalendarElement.calendarCell) {
-                final DateTime chosenSlot = details.date!;
-                if (chosenSlot.isAfter(
-                  DateTime.now().subtract(const Duration(hours: 1)),
-                )) {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text("Create Match Here?"),
-                      content: Text(
-                        "Would you like to host a match on ${chosenSlot.month}/${chosenSlot.day} at ${TimeOfDay.fromDateTime(chosenSlot).format(context)}?",
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    CreateMatchScreen(prefillDate: chosenSlot),
-                              ),
-                            );
-                          },
-                          child: const Text("Create Match"),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              }
-            },
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SfCalendar(
+                  view: _currentCalendarView,
+                  controller: _calendarController,
+                  showNavigationArrow: true,
+                  showDatePickerButton: true,
+                  dataSource: _calendarDataSource,
+                  timeSlotViewSettings: const TimeSlotViewSettings(
+                    startHour: 0,
+                    endHour: 24,
+                  ),
+                  monthViewSettings: const MonthViewSettings(
+                    showAgenda: false,
+                    appointmentDisplayMode:
+                        MonthAppointmentDisplayMode.appointment,
+                  ),
+                  onTap: (CalendarTapDetails details) {
+                    if (details.appointments != null &&
+                        details.appointments!.isNotEmpty) {
+                      final Appointment appt = details.appointments!.first;
+                      final docId = appt.notes;
+                      if (docId != null) {
+                        _showMatchDetailsDialog(docId);
+                      }
+                    } else if (details.targetElement ==
+                        CalendarElement.calendarCell) {
+                      final DateTime chosenSlot = details.date!;
+                      if (chosenSlot.isAfter(
+                        DateTime.now().subtract(const Duration(hours: 1)),
+                      )) {
+                        setState(() {
+                          final isSameSlot = _selectedSlot != null &&
+                              _selectedSlot!.year == chosenSlot.year &&
+                              _selectedSlot!.month == chosenSlot.month &&
+                              _selectedSlot!.day == chosenSlot.day &&
+                              _selectedSlot!.hour == chosenSlot.hour;
+                          if (isSameSlot) {
+                            _selectedSlot = null;
+                            _selectedPlayerUids = {};
+                          } else {
+                            _selectedSlot = chosenSlot;
+                            _selectedPlayerUids = {};
+                          }
+                        });
+                      }
+                    }
+                  },
+                ),
+              ),
+              if (_selectedSlot != null)
+                SizedBox(width: 180, child: _buildAvailabilitySidebar()),
+            ],
           ),
         ),
       ],
@@ -1437,7 +1567,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextField(
                 controller: _phoneCtrl,
                 decoration: const InputDecoration(
-                  labelText: "Email or Phone Number",
+                  labelText: "Email",
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.account_circle),
                 ),
@@ -1545,6 +1675,282 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ===========================================================================
+  // AVAILABILITY SIDEBAR
+  // ===========================================================================
+  Widget _buildAvailabilitySidebar() {
+    final slot = _selectedSlot!;
+
+    // Apply NTRP and Circle filters to the player list
+    final filteredUsers = _allUsersData.where((u) {
+      if (_sidebarNtrpFilter != null && u.ntrpLevel < _sidebarNtrpFilter!) {
+        return false;
+      }
+      if (_sidebarCircleFilter != null && _user != null) {
+        if (_user!.circleRatings[u.uid] != _sidebarCircleFilter) return false;
+      }
+      return true;
+    }).toList();
+
+    final available = <User>[];
+    final away = <User>[];
+    final unknown = <User>[];
+
+    for (final u in filteredUsers) {
+      switch (AvailabilityUtils.playerAvailability(u, slot)) {
+        case AvailabilityStatus.available:
+          available.add(u);
+        case AvailabilityStatus.away:
+          away.add(u);
+        case AvailabilityStatus.unknown:
+          unknown.add(u);
+      }
+    }
+
+    final periodLabel = AvailabilityUtils.periodForTime(slot) ?? 'Time';
+    final isPast = slot.isBefore(DateTime.now().subtract(const Duration(hours: 1)));
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            color: const Color(0xFF1A237E),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "${_monthAbbr(slot.month)} ${slot.day}",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            _capitalize(periodLabel),
+                            style: const TextStyle(
+                              color: Color(0xFF90CAF9),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedSlot = null;
+                        _selectedPlayerUids = {};
+                      }),
+                      child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Players most likely available",
+                  style: TextStyle(
+                    color: Color(0xFF90CAF9),
+                    fontSize: 9,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Filters
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<double?>(
+                      value: _sidebarNtrpFilter,
+                      isDense: true,
+                      isExpanded: true,
+                      hint: const Text('NTRP', style: TextStyle(fontSize: 9)),
+                      style: const TextStyle(fontSize: 9, color: Colors.black87),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('Any', style: TextStyle(fontSize: 9)),
+                        ),
+                        ...[3.0, 3.5, 4.0, 4.5, 5.0].map(
+                          (v) => DropdownMenuItem(
+                            value: v,
+                            child: Text('≥$v', style: const TextStyle(fontSize: 9)),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) => setState(() => _sidebarNtrpFilter = val),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int?>(
+                      value: _sidebarCircleFilter,
+                      isDense: true,
+                      isExpanded: true,
+                      hint: const Text('Circle', style: TextStyle(fontSize: 9)),
+                      style: const TextStyle(fontSize: 9, color: Colors.black87),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('Any', style: TextStyle(fontSize: 9)),
+                        ),
+                        ...[1, 2, 3].map(
+                          (v) => DropdownMenuItem(
+                            value: v,
+                            child: Text('C$v', style: const TextStyle(fontSize: 9)),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) => setState(() => _sidebarCircleFilter = val),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Player lists
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 4),
+              children: [
+                _sidebarSection("Available", available, Colors.green.shade700,
+                    showCheckbox: true),
+                _sidebarSection("Not set", unknown, Colors.grey.shade600,
+                    showCheckbox: true),
+                _sidebarSection("Away", away, Colors.red.shade700),
+              ],
+            ),
+          ),
+          // Create Match button
+          Padding(
+            padding: const EdgeInsets.all(6),
+            child: ElevatedButton(
+              onPressed: isPast
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CreateMatchScreen(
+                            prefillDate: slot,
+                            prefillPlayerUids: _selectedPlayerUids.toList(),
+                          ),
+                        ),
+                      );
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isPast ? Colors.grey : Colors.green.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                textStyle: const TextStyle(fontSize: 11),
+              ),
+              child: Text(
+                _selectedPlayerUids.isEmpty
+                    ? "Create Match\nHere"
+                    : "Create Match\n(${_selectedPlayerUids.length} selected)",
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebarSection(
+    String label,
+    List<User> users,
+    Color color, {
+    bool showCheckbox = false,
+  }) {
+    if (users.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+        for (final u in users)
+          showCheckbox
+              ? Row(
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: Checkbox(
+                        value: _selectedPlayerUids.contains(u.uid),
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              _selectedPlayerUids.add(u.uid);
+                            } else {
+                              _selectedPlayerUids.remove(u.uid);
+                            }
+                          });
+                        },
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        u.displayName,
+                        style: const TextStyle(fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                )
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
+                  child: Text(
+                    u.displayName,
+                    style: const TextStyle(fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+      ],
+    );
+  }
+
+  static String _monthAbbr(int month) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return months[month - 1];
+  }
+
+  static String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
   Widget _buildProfileEditor() {
     return Scaffold(
       appBar: AppBar(
@@ -1554,18 +1960,11 @@ class _HomeScreenState extends State<HomeScreen> {
           onPressed: () => setState(() => _isEditingProfile = false),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'feedbackBtnProfile',
-        onPressed: () {
-          showFeedbackModal(context, _myUid, _user?.displayName, 'Profile');
-        },
-        backgroundColor: Colors.amber.shade300,
-        foregroundColor: Colors.black87,
-        child: const Icon(Icons.lightbulb_outline),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: Stack(
         children: [
+          ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
           if (_user == null ||
               _user?.accountStatus == AccountStatus.provisional)
             SwitchListTile(
@@ -1671,6 +2070,133 @@ class _HomeScreenState extends State<HomeScreen> {
               value: _notifOn,
               onChanged: (v) => setState(() => _notifOn = v),
             ),
+            const SizedBox(height: 20),
+            const Text(
+              "Weekly Availability",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const Text(
+              "All times default to available. Uncheck slots when you're NOT free to play.",
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(1.2),
+                1: FlexColumnWidth(1),
+                2: FlexColumnWidth(1),
+                3: FlexColumnWidth(1),
+              },
+              children: [
+                TableRow(
+                  children: [
+                    const SizedBox.shrink(),
+                    ...List.generate(_avPeriodLabels.length, (i) => Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _avPeriodLabels[i],
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            _avPeriodTimeLabels[i],
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: Colors.black54,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )),
+                  ],
+                ),
+                for (int di = 0; di < _avDays.length; di++)
+                  TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          _avDayLabels[di],
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      for (final period in _avPeriods)
+                        Center(
+                          child: Transform.scale(
+                            scale: 0.75,
+                            child: FilterChip(
+                              label: const SizedBox.shrink(),
+                              padding: EdgeInsets.zero,
+                              selected:
+                                  _weeklyAvailability[_avDays[di]]?.contains(
+                                    period,
+                                  ) ??
+                                  false,
+                              onSelected: (selected) {
+                                setState(() {
+                                  final day = _avDays[di];
+                                  final periods =
+                                      _weeklyAvailability[day] ?? [];
+                                  if (selected) {
+                                    _weeklyAvailability[day] = [
+                                      ...periods,
+                                      period,
+                                    ];
+                                  } else {
+                                    _weeklyAvailability[day] =
+                                        periods
+                                            .where((p) => p != period)
+                                            .toList();
+                                    if (_weeklyAvailability[day]!.isEmpty) {
+                                      _weeklyAvailability.remove(day);
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Blackout Dates",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.date_range),
+              label: const Text("Add Blackout"),
+              onPressed: _pickBlackout,
+            ),
+            for (int i = 0; i < _blackouts.length; i++)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.block, color: Colors.red),
+                title: Text(
+                  "${_blackouts[i].start.month}/${_blackouts[i].start.day}"
+                  " – "
+                  "${_blackouts[i].end.month}/${_blackouts[i].end.day}",
+                  style: const TextStyle(fontSize: 13),
+                ),
+                subtitle: _blackouts[i].reason != null &&
+                        _blackouts[i].reason!.isNotEmpty
+                    ? Text(
+                        _blackouts[i].reason!,
+                        style: const TextStyle(fontSize: 12),
+                      )
+                    : null,
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setState(() => _blackouts.removeAt(i)),
+                ),
+              ),
           ],
           const SizedBox(height: 40),
           ElevatedButton(
@@ -1690,6 +2216,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: Text(_isQuickSetup ? "Quick Join" : "Save & View Matches"),
           ),
+        ],
+      ),
+      if (_feedbackBtnOffset != null)
+        _buildDraggableFab(
+          offset: _feedbackBtnOffset!,
+          onPressed: () =>
+              showFeedbackModal(context, _myUid, _user?.displayName, 'Profile'),
+        ),
         ],
       ),
     );
