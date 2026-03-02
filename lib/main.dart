@@ -178,13 +178,15 @@ class _HomeScreenState extends State<HomeScreen> {
         .listen((snap) {
           if (!mounted) return;
           setState(() {
-            final users = snap.docs
-                .map((d) => User.fromFirestore(d))
-                .where((u) => u.displayName.trim().isNotEmpty)
-                .toList()
-              ..sort((a, b) => a.displayName.compareTo(b.displayName));
+            final users =
+                snap.docs
+                    .map((d) => User.fromFirestore(d))
+                    .where((u) => u.displayName.trim().isNotEmpty)
+                    .toList()
+                  ..sort((a, b) => a.displayName.compareTo(b.displayName));
             _allUsersData = users;
-            _allUsers = users.map((u) => u.displayName).toSet().toList()..sort();
+            _allUsers = users.map((u) => u.displayName).toSet().toList()
+              ..sort();
           });
         });
   }
@@ -314,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _blackouts = List<BlackoutPeriod>.from(user.blackouts);
             _isEditingProfile =
                 user.accountStatus == AccountStatus.provisional &&
+                user.displayName.isEmpty &&
                 widget.initialMatchId == null;
           });
 
@@ -378,8 +381,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ntrpLevel: _isQuickSetup ? 0.0 : _ntrp,
       gender: _isQuickSetup ? 'Other' : _gender,
       address: _isQuickSetup ? '' : _addressCtrl.text,
-      email: _isQuickSetup ? '' : _emailCtrl.text,
-      phoneNumber: _isQuickSetup ? '' : _phoneFormCtrl.text,
+      email: _isQuickSetup ? (_user?.email ?? '') : _emailCtrl.text,
+      phoneNumber: _isQuickSetup
+          ? (_user?.phoneNumber ?? '')
+          : _phoneFormCtrl.text,
       notifActive: _isQuickSetup ? false : _notifOn,
       notifMode: 'Email',
       accountStatus: _isQuickSetup
@@ -437,7 +442,9 @@ class _HomeScreenState extends State<HomeScreen> {
           BlackoutPeriod(
             start: range.start,
             end: range.end,
-            reason: reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
+            reason: reasonCtrl.text.trim().isEmpty
+                ? null
+                : reasonCtrl.text.trim(),
           ),
         );
       });
@@ -1099,7 +1106,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         DateTime.now().subtract(const Duration(hours: 1)),
                       )) {
                         setState(() {
-                          final isSameSlot = _selectedSlot != null &&
+                          final isSameSlot =
+                              _selectedSlot != null &&
                               _selectedSlot!.year == chosenSlot.year &&
                               _selectedSlot!.month == chosenSlot.month &&
                               _selectedSlot!.day == chosenSlot.day &&
@@ -1708,7 +1716,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final periodLabel = AvailabilityUtils.periodForTime(slot) ?? 'Time';
-    final isPast = slot.isBefore(DateTime.now().subtract(const Duration(hours: 1)));
+    final isPast = slot.isBefore(
+      DateTime.now().subtract(const Duration(hours: 1)),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -1753,7 +1763,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         _selectedSlot = null;
                         _selectedPlayerUids = {};
                       }),
-                      child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -1781,7 +1795,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       isDense: true,
                       isExpanded: true,
                       hint: const Text('NTRP', style: TextStyle(fontSize: 9)),
-                      style: const TextStyle(fontSize: 9, color: Colors.black87),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.black87,
+                      ),
                       items: [
                         const DropdownMenuItem(
                           value: null,
@@ -1790,11 +1807,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ...[3.0, 3.5, 4.0, 4.5, 5.0].map(
                           (v) => DropdownMenuItem(
                             value: v,
-                            child: Text('≥$v', style: const TextStyle(fontSize: 9)),
+                            child: Text(
+                              '≥$v',
+                              style: const TextStyle(fontSize: 9),
+                            ),
                           ),
                         ),
                       ],
-                      onChanged: (val) => setState(() => _sidebarNtrpFilter = val),
+                      onChanged: (val) =>
+                          setState(() => _sidebarNtrpFilter = val),
                     ),
                   ),
                 ),
@@ -1806,7 +1827,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       isDense: true,
                       isExpanded: true,
                       hint: const Text('Circle', style: TextStyle(fontSize: 9)),
-                      style: const TextStyle(fontSize: 9, color: Colors.black87),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.black87,
+                      ),
                       items: [
                         const DropdownMenuItem(
                           value: null,
@@ -1815,11 +1839,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ...[1, 2, 3].map(
                           (v) => DropdownMenuItem(
                             value: v,
-                            child: Text('C$v', style: const TextStyle(fontSize: 9)),
+                            child: Text(
+                              'C$v',
+                              style: const TextStyle(fontSize: 9),
+                            ),
                           ),
                         ),
                       ],
-                      onChanged: (val) => setState(() => _sidebarCircleFilter = val),
+                      onChanged: (val) =>
+                          setState(() => _sidebarCircleFilter = val),
                     ),
                   ),
                 ),
@@ -1832,10 +1860,18 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 4),
               children: [
-                _sidebarSection("Available", available, Colors.green.shade700,
-                    showCheckbox: true),
-                _sidebarSection("Not set", unknown, Colors.grey.shade600,
-                    showCheckbox: true),
+                _sidebarSection(
+                  "Available",
+                  available,
+                  Colors.green.shade700,
+                  showCheckbox: true,
+                ),
+                _sidebarSection(
+                  "Not set",
+                  unknown,
+                  Colors.grey.shade600,
+                  showCheckbox: true,
+                ),
                 _sidebarSection("Away", away, Colors.red.shade700),
               ],
             ),
@@ -1942,8 +1978,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static String _monthAbbr(int month) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return months[month - 1];
   }
@@ -1965,265 +2011,273 @@ class _HomeScreenState extends State<HomeScreen> {
           ListView(
             padding: const EdgeInsets.all(20),
             children: [
-          if (_user == null ||
-              _user?.accountStatus == AccountStatus.provisional)
-            SwitchListTile(
-              title: const Text("Quick Setup (Limited Features)"),
-              subtitle: const Text(
-                "Only provide name to accept invites. You won't be able to organize matches.",
-              ),
-              value: _isQuickSetup,
-              onChanged: (v) => setState(() => _isQuickSetup = v),
-              activeColor: Colors.blue,
-            ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: "Display Name (Required)",
-            ),
-          ),
-          if (!_isQuickSetup) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TypeAheadField<String>(
-                    controller: _addressCtrl,
-                    suggestionsCallback: _fetchPlaceSuggestions,
-                    itemBuilder: (context, suggestion) {
-                      return ListTile(
-                        leading: const Icon(Icons.place),
-                        title: Text(suggestion),
-                      );
-                    },
-                    onSelected: (suggestion) {
-                      setState(() {
-                        _addressCtrl.text = suggestion;
-                      });
-                    },
-                    builder: (context, controller, focusNode) {
-                      return TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        decoration: const InputDecoration(
-                          labelText: "Physical Address",
-                        ),
-                      );
-                    },
+              if (_user == null ||
+                  _user?.accountStatus == AccountStatus.provisional)
+                SwitchListTile(
+                  title: const Text("Quick Setup (Limited Features)"),
+                  subtitle: const Text(
+                    "Only provide name to accept invites. You won't be able to organize matches.",
                   ),
+                  value: _isQuickSetup,
+                  onChanged: (v) => setState(() => _isQuickSetup = v),
+                  activeColor: Colors.blue,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.map, color: Colors.blue),
-                  onPressed: _launchMap,
+              const SizedBox(height: 10),
+              TextField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: "Display Name (Required)",
                 ),
-              ],
-            ),
-            TextField(
-              controller: _emailCtrl,
-              decoration: const InputDecoration(labelText: "Email"),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _phoneFormCtrl,
-              decoration: const InputDecoration(labelText: "Phone Number"),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 20),
-            const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold)),
-            DropdownButton<String>(
-              value: _gender,
-              isExpanded: true,
-              items: [
-                'Male',
-                'Female',
-                'Non-Binary',
-                'Other',
-              ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setState(() => _gender = v!),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "NTRP Level",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            DropdownButton<double>(
-              value: _ntrp,
-              isExpanded: true,
-              items: [0.0, 3.0, 3.5, 4.0, 4.5, 5.0]
-                  .map(
-                    (v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(v == 0.0 ? "Not Rated" : "Level $v"),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _ntrp = v!),
-            ),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              title: const Text("New Match Notifications Active"),
-              subtitle: const Text(
-                "Get notified when you're invited to new matches. "
-                "Match updates always send for matches you're on.",
               ),
-              value: _notifOn,
-              onChanged: (v) => setState(() => _notifOn = v),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "Weekly Availability",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const Text(
-              "All times default to available. Uncheck slots when you're NOT free to play.",
-              style: TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            const SizedBox(height: 10),
-            Table(
-              columnWidths: const {
-                0: FlexColumnWidth(1.2),
-                1: FlexColumnWidth(1),
-                2: FlexColumnWidth(1),
-                3: FlexColumnWidth(1),
-              },
-              children: [
-                TableRow(
+              if (!_isQuickSetup) ...[
+                Row(
                   children: [
-                    const SizedBox.shrink(),
-                    ...List.generate(_avPeriodLabels.length, (i) => Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _avPeriodLabels[i],
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: TypeAheadField<String>(
+                        controller: _addressCtrl,
+                        suggestionsCallback: _fetchPlaceSuggestions,
+                        itemBuilder: (context, suggestion) {
+                          return ListTile(
+                            leading: const Icon(Icons.place),
+                            title: Text(suggestion),
+                          );
+                        },
+                        onSelected: (suggestion) {
+                          setState(() {
+                            _addressCtrl.text = suggestion;
+                          });
+                        },
+                        builder: (context, controller, focusNode) {
+                          return TextField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: "Physical Address",
                             ),
-                          ),
-                          Text(
-                            _avPeriodTimeLabels[i],
-                            style: const TextStyle(
-                              fontSize: 9,
-                              color: Colors.black54,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    )),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.map, color: Colors.blue),
+                      onPressed: _launchMap,
+                    ),
                   ],
                 ),
-                for (int di = 0; di < _avDays.length; di++)
-                  TableRow(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          _avDayLabels[di],
-                          style: const TextStyle(fontSize: 12),
+                TextField(
+                  controller: _emailCtrl,
+                  decoration: const InputDecoration(labelText: "Email"),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _phoneFormCtrl,
+                  decoration: const InputDecoration(labelText: "Phone Number"),
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Gender",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                DropdownButton<String>(
+                  value: _gender,
+                  isExpanded: true,
+                  items: ['Male', 'Female', 'Non-Binary', 'Other']
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _gender = v!),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "NTRP Level",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                DropdownButton<double>(
+                  value: _ntrp,
+                  isExpanded: true,
+                  items: [0.0, 3.0, 3.5, 4.0, 4.5, 5.0]
+                      .map(
+                        (v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(v == 0.0 ? "Not Rated" : "Level $v"),
                         ),
-                      ),
-                      for (final period in _avPeriods)
-                        Center(
-                          child: Transform.scale(
-                            scale: 0.75,
-                            child: FilterChip(
-                              label: const SizedBox.shrink(),
-                              padding: EdgeInsets.zero,
-                              selected:
-                                  _weeklyAvailability[_avDays[di]]?.contains(
-                                    period,
-                                  ) ??
-                                  false,
-                              onSelected: (selected) {
-                                setState(() {
-                                  final day = _avDays[di];
-                                  final periods =
-                                      _weeklyAvailability[day] ?? [];
-                                  if (selected) {
-                                    _weeklyAvailability[day] = [
-                                      ...periods,
-                                      period,
-                                    ];
-                                  } else {
-                                    _weeklyAvailability[day] =
-                                        periods
-                                            .where((p) => p != period)
-                                            .toList();
-                                    if (_weeklyAvailability[day]!.isEmpty) {
-                                      _weeklyAvailability.remove(day);
-                                    }
-                                  }
-                                });
-                              },
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _ntrp = v!),
+                ),
+                const SizedBox(height: 20),
+                SwitchListTile(
+                  title: const Text("New Match Notifications Active"),
+                  subtitle: const Text(
+                    "Get notified when you're invited to new matches. "
+                    "Match updates always send for matches you're on.",
+                  ),
+                  value: _notifOn,
+                  onChanged: (v) => setState(() => _notifOn = v),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "Weekly Availability",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const Text(
+                  "All times default to available. Uncheck slots when you're NOT free to play.",
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 10),
+                Table(
+                  columnWidths: const {
+                    0: FlexColumnWidth(1.2),
+                    1: FlexColumnWidth(1),
+                    2: FlexColumnWidth(1),
+                    3: FlexColumnWidth(1),
+                  },
+                  children: [
+                    TableRow(
+                      children: [
+                        const SizedBox.shrink(),
+                        ...List.generate(
+                          _avPeriodLabels.length,
+                          (i) => Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _avPeriodLabels[i],
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  _avPeriodTimeLabels[i],
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.black54,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                    ],
+                      ],
+                    ),
+                    for (int di = 0; di < _avDays.length; di++)
+                      TableRow(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              _avDayLabels[di],
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          for (final period in _avPeriods)
+                            Center(
+                              child: Transform.scale(
+                                scale: 0.75,
+                                child: FilterChip(
+                                  label: const SizedBox.shrink(),
+                                  padding: EdgeInsets.zero,
+                                  selected:
+                                      _weeklyAvailability[_avDays[di]]
+                                          ?.contains(period) ??
+                                      false,
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      final day = _avDays[di];
+                                      final periods =
+                                          _weeklyAvailability[day] ?? [];
+                                      if (selected) {
+                                        _weeklyAvailability[day] = [
+                                          ...periods,
+                                          period,
+                                        ];
+                                      } else {
+                                        _weeklyAvailability[day] = periods
+                                            .where((p) => p != period)
+                                            .toList();
+                                        if (_weeklyAvailability[day]!.isEmpty) {
+                                          _weeklyAvailability.remove(day);
+                                        }
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "Blackout Dates",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.date_range),
+                  label: const Text("Add Blackout"),
+                  onPressed: _pickBlackout,
+                ),
+                for (int i = 0; i < _blackouts.length; i++)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.block, color: Colors.red),
+                    title: Text(
+                      "${_blackouts[i].start.month}/${_blackouts[i].start.day}"
+                      " – "
+                      "${_blackouts[i].end.month}/${_blackouts[i].end.day}",
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    subtitle:
+                        _blackouts[i].reason != null &&
+                            _blackouts[i].reason!.isNotEmpty
+                        ? Text(
+                            _blackouts[i].reason!,
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(() => _blackouts.removeAt(i)),
+                    ),
                   ),
               ],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              "Blackout Dates",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.date_range),
-              label: const Text("Add Blackout"),
-              onPressed: _pickBlackout,
-            ),
-            for (int i = 0; i < _blackouts.length; i++)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.block, color: Colors.red),
-                title: Text(
-                  "${_blackouts[i].start.month}/${_blackouts[i].start.day}"
-                  " – "
-                  "${_blackouts[i].end.month}/${_blackouts[i].end.day}",
-                  style: const TextStyle(fontSize: 13),
+              const SizedBox(height: 40),
+              ElevatedButton(
+                onPressed: () {
+                  if (_nameCtrl.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Display Name is required')),
+                    );
+                    return;
+                  }
+                  _saveProfile();
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
                 ),
-                subtitle: _blackouts[i].reason != null &&
-                        _blackouts[i].reason!.isNotEmpty
-                    ? Text(
-                        _blackouts[i].reason!,
-                        style: const TextStyle(fontSize: 12),
-                      )
-                    : null,
-                trailing: IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => setState(() => _blackouts.removeAt(i)),
+                child: Text(
+                  _isQuickSetup ? "Quick Join" : "Save & View Matches",
                 ),
               ),
-          ],
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: () {
-              if (_nameCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Display Name is required')),
-                );
-                return;
-              }
-              _saveProfile();
-            },
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
-              backgroundColor: Colors.green.shade700,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(_isQuickSetup ? "Quick Join" : "Save & View Matches"),
+            ],
           ),
-        ],
-      ),
-      if (_feedbackBtnOffset != null)
-        _buildDraggableFab(
-          offset: _feedbackBtnOffset!,
-          onPressed: () =>
-              showFeedbackModal(context, _myUid, _user?.displayName, 'Profile'),
-        ),
+          if (_feedbackBtnOffset != null)
+            _buildDraggableFab(
+              offset: _feedbackBtnOffset!,
+              onPressed: () => showFeedbackModal(
+                context,
+                _myUid,
+                _user?.displayName,
+                'Profile',
+              ),
+            ),
         ],
       ),
     );

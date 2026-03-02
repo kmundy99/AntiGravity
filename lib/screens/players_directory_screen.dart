@@ -27,6 +27,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
   int? _filterCircle;
   String _filterLocation = "";
   String _filterName = "";
+  String _filterGender = "Any";
 
   @override
   Widget build(BuildContext context) {
@@ -73,8 +74,32 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
             if (assignedCircle != _filterCircle) return false;
           }
 
+          if (_filterGender != 'Any' && user.gender != _filterGender) {
+            return false;
+          }
+
           return true;
         }).toList();
+
+        // SORTING LOGIC:
+        // 1. Current user always first
+        // 2. Then by Circle number (unassigned goes last)
+        // 3. Then by Name
+        filteredDocs.sort((a, b) {
+          if (a.id == widget.currentUserUid) return -1;
+          if (b.id == widget.currentUserUid) return 1;
+
+          final aCircle = currentUser.circleRatings[a.id] ?? 999;
+          final bCircle = currentUser.circleRatings[b.id] ?? 999;
+
+          if (aCircle != bCircle) return aCircle.compareTo(bCircle);
+
+          final aUser = User.fromFirestore(a);
+          final bUser = User.fromFirestore(b);
+          return aUser.displayName.toLowerCase().compareTo(
+            bUser.displayName.toLowerCase(),
+          );
+        });
 
         return Column(
           children: [
@@ -113,6 +138,16 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       DropdownMenuItem(value: 3, child: Text('Circle 3')),
                     ],
                     onChanged: (val) => setState(() => _filterCircle = val),
+                  ),
+                ),
+                ListTile(
+                  title: const Text("Filter by Gender"),
+                  trailing: DropdownButton<String>(
+                    value: _filterGender,
+                    items: ['Any', 'Male', 'Female', 'Non-Binary', 'Other']
+                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .toList(),
+                    onChanged: (val) => setState(() => _filterGender = val!),
                   ),
                 ),
                 Padding(

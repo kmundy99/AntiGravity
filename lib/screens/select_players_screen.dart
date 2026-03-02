@@ -24,6 +24,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
 
   double _minNtrpFilter = 0.0;
   int? _circleFilter;
+  String _genderFilter = 'Any';
 
   @override
   Widget build(BuildContext context) {
@@ -85,6 +86,10 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
               if (assignedCircle != _circleFilter) return false;
             }
 
+            if (_genderFilter != 'Any' && user.gender != _genderFilter) {
+              return false;
+            }
+
             return true;
           }).toList();
 
@@ -130,14 +135,17 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
                             "Min NTRP",
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
                           ),
                           DropdownButton<double>(
                             isExpanded: true,
@@ -148,12 +156,46 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                                     value: v,
                                     child: Text(
                                       v == 0.0 ? 'Any' : v.toString(),
+                                      style: const TextStyle(fontSize: 13),
                                     ),
                                   ),
                                 )
                                 .toList(),
                             onChanged: (val) =>
                                 setState(() => _minNtrpFilter = val!),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Gender",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          DropdownButton<String>(
+                            isExpanded: true,
+                            value: _genderFilter,
+                            items:
+                                ['Any', 'Male', 'Female', 'Non-Binary', 'Other']
+                                    .map(
+                                      (v) => DropdownMenuItem(
+                                        value: v,
+                                        child: Text(
+                                          v,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged: (val) =>
+                                setState(() => _genderFilter = val!),
                           ),
                         ],
                       ),
@@ -170,23 +212,42 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                   children: [
                     Expanded(child: const AddCustomPlayerButton()),
                     const SizedBox(width: 10),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade100,
-                        foregroundColor: Colors.blue.shade900,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          for (var doc in players) {
-                            final docId = doc.id;
-                            if (!_selectedUids.contains(docId)) {
-                              _selectedUids.add(docId);
-                              _selectedUsers.add(User.fromFirestore(doc));
-                            }
-                          }
-                        });
-                      },
-                      child: const Text('Select All'),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value:
+                              players.isNotEmpty &&
+                              players.every(
+                                (doc) => _selectedUids.contains(doc.id),
+                              ),
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                for (var doc in players) {
+                                  final docId = doc.id;
+                                  if (!_selectedUids.contains(docId)) {
+                                    _selectedUids.add(docId);
+                                    _selectedUsers.add(User.fromFirestore(doc));
+                                  }
+                                }
+                              } else {
+                                for (var doc in players) {
+                                  final docId = doc.id;
+                                  _selectedUids.remove(docId);
+                                  _selectedUsers.removeWhere(
+                                    (u) => u.uid == docId,
+                                  );
+                                }
+                              }
+                            });
+                          },
+                        ),
+                        const Text(
+                          'Select All',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
                   ],
                 ),

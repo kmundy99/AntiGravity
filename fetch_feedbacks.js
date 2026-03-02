@@ -1,8 +1,14 @@
 fetch("https://firestore.googleapis.com/v1/projects/tennis-app-mp-2026/databases/(default)/documents/feedbacks")
     .then(r => r.json())
     .then(data => {
-        const docs = data.documents;
+        let docs = data.documents;
         if (!docs) return console.log("No feedback found");
+
+        // Filter out fixed feedbacks
+        docs = docs.filter(d => d.fields.status?.stringValue !== 'fixed');
+
+        if (docs.length === 0) return console.log("No active feedback found.");
+
         docs.sort((a, b) => {
             const dateA = a.fields.createdAt?.timestampValue || "";
             const dateB = b.fields.createdAt?.timestampValue || "";
