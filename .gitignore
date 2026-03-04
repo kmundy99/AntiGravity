@@ -9,3 +9,5 @@ build/
 android/key.properties
 ios/Runner/GoogleService-Info.plist
 .env
+*.deb
+*.pkg

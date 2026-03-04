@@ -853,7 +853,8 @@ class _ContractScreenState extends State<ContractScreen> {
             ),
           )
         else
-          ...contract.roster.map((player) => _buildPlayerTile(contract, player)),
+          ...(contract.roster.toList()..sort((a, b) => a.displayName.compareTo(b.displayName)))
+              .map((player) => _buildPlayerTile(contract, player)),
       ],
     );
   }

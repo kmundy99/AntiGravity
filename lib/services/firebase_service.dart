@@ -85,6 +85,18 @@ class FirebaseService {
         .set(session.toFirestore(), SetOptions(merge: true));
   }
 
+  /// Removes a single uid key from a session's attendance map.
+  /// Must use FieldValue.delete() — set(merge:true) cannot remove map keys.
+  Future<void> clearAttendanceEntry(
+      String contractId, String sessionId, String uid) async {
+    await _db
+        .collection('contracts')
+        .doc(contractId)
+        .collection('sessions')
+        .doc(sessionId)
+        .update({'attendance.$uid': FieldValue.delete()});
+  }
+
   Future<void> logMessage(MessageLogEntry entry) async {
     final now = DateTime.now();
     final data = entry.toFirestore();

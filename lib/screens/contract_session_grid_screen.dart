@@ -113,13 +113,14 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     final currentState = existing.attendance[uid];
     if (currentState == newState) return; // nothing to do
 
-    final updatedAttendance = Map<String, String>.from(existing.attendance);
     if (newState == 'clear') {
-      updatedAttendance.remove(uid);
+      // FieldValue.delete() is required — set(merge:true) cannot remove map keys
+      await _firebase.clearAttendanceEntry(widget.contract.id, existing.id, uid);
     } else {
-      updatedAttendance[uid] = newState;
+      final updatedAttendance = Map<String, String>.from(existing.attendance)
+        ..[uid] = newState;
+      await _firebase.upsertSession(widget.contract.id, existing.copyWith(attendance: updatedAttendance));
     }
-    await _firebase.upsertSession(widget.contract.id, existing.copyWith(attendance: updatedAttendance));
 
     // Keep playedSlots in sync
     final wasPlayed  = currentState == 'played';
@@ -433,7 +434,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                   itemBuilder: (_, i) => _buildStatsRow(roster[i], sessions),
                 ),
               ),
-              _buildStatsFooter(),
+              _buildStatsFooter(roster, sessions),
             ],
           ),
         ),
@@ -442,8 +443,9 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
         Expanded(
           child: Listener(
             key: _sessionPanelKey,
-            // Pointer down: record the start cell and determine paint state.
-            // No setState — these fields are not rendered, only read by other handlers.
+            // Pointer down: determine paint state and immediately apply it to the
+            // tapped cell. This ensures the tapped cell always updates whether the
+            // user is just clicking or starting a drag.
             onPointerDown: _quickFillMode
                 ? (event) {
                     final cell = _cellAt(event.position, roster, sessionDates);
@@ -456,26 +458,22 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                     _lastDragRow = cell.row;
                     _lastDragCol = cell.col;
                     _dragOccurred = false;
+                    unawaited(_applyAttendanceChange(
+                      uid: roster[cell.row].uid,
+                      sessionDate: sessionDates[cell.col],
+                      sessions: sessions,
+                      newState: _dragPaintState!,
+                    ));
                   }
                 : null,
             // Pointer move: paint every new cell the drag enters.
-            // On the first move away from the start, also paint the start cell.
             onPointerMove: _quickFillMode
                 ? (event) {
                     if (_dragPaintState == null) return;
                     final cell = _cellAt(event.position, roster, sessionDates);
                     if (cell == null) return;
                     if (cell.row == _lastDragRow && cell.col == _lastDragCol) return;
-                    // First cell crossed — retroactively paint the starting cell too
-                    if (!_dragOccurred) {
-                      _dragOccurred = true;
-                      unawaited(_applyAttendanceChange(
-                        uid: roster[_dragStartRow!].uid,
-                        sessionDate: sessionDates[_dragStartCol!],
-                        sessions: sessions,
-                        newState: _dragPaintState!,
-                      ));
-                    }
+                    _dragOccurred = true;
                     _lastDragRow = cell.row;
                     _lastDragCol = cell.col;
                     unawaited(_applyAttendanceChange(
@@ -486,19 +484,9 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                     ));
                   }
                 : null,
-            // Pointer up: if no drag occurred this was a tap — apply the change now.
+            // Pointer up: reset drag state.
             onPointerUp: _quickFillMode
                 ? (event) {
-                    if (!_dragOccurred &&
-                        _dragStartRow != null &&
-                        _dragPaintState != null) {
-                      unawaited(_applyAttendanceChange(
-                        uid: roster[_dragStartRow!].uid,
-                        sessionDate: sessionDates[_dragStartCol!],
-                        sessions: sessions,
-                        newState: _dragPaintState!,
-                      ));
-                    }
                     _dragPaintState = null;
                     _lastDragRow = null;
                     _lastDragCol = null;
@@ -614,8 +602,8 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   Widget _buildStatsRow(ContractPlayer player, List<ContractSession> sessions) {
     final played = _playedCount(player.uid, sessions);
     final pct = player.paidSlots > 0
-        ? (played / player.paidSlots * 100).round()
-        : 0;
+        ? played / player.paidSlots * 100
+        : 0.0;
     final left = (player.paidSlots - played).clamp(0, player.paidSlots);
 
     return Container(
@@ -638,7 +626,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
           ),
           _statCell('${player.paidSlots}', _colPaid),
           _statCell('$played', _colPlayed),
-          _statCell('$pct%', _colPct, color: _pctColor(pct, player.paidSlots > 0)),
+          _statCell('${pct.toStringAsFixed(1)}%', _colPct, color: _pctColor(pct, player.paidSlots > 0)),
           _statCell('$left', _colLeft),
         ],
       ),
@@ -992,23 +980,46 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
 
   // ── Helper widgets ─────────────────────────────────────────────────
 
-  Widget _buildStatsFooter() => Container(
-    height: _rowHeight,
-    decoration: BoxDecoration(
-      color: Colors.green.shade50,
-      border: Border(top: BorderSide(color: Colors.green.shade200, width: 1.5)),
-    ),
-    alignment: Alignment.centerLeft,
-    padding: const EdgeInsets.only(left: 8),
-    child: Text(
-      'Players In (P)',
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        color: Colors.green.shade800,
+  Widget _buildStatsFooter(List<ContractPlayer> roster, List<ContractSession> sessions) {
+    final totalPaid = roster.fold(0, (sum, p) => sum + p.paidSlots);
+    final totalPlayed = roster.fold(0, (sum, p) => sum + _playedCount(p.uid, sessions));
+    final pct = totalPaid > 0 ? totalPlayed / totalPaid * 100 : 0.0;
+    final left = (totalPaid - totalPlayed).clamp(0, totalPaid);
+
+    return Container(
+      height: _rowHeight,
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        border: Border(top: BorderSide(color: Colors.green.shade200, width: 1.5)),
       ),
-    ),
-  );
+      child: Row(
+        children: [
+          SizedBox(
+            width: _colName,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                'Totals',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green.shade800,
+                ),
+              ),
+            ),
+          ),
+          _statCell('$totalPaid', _colPaid,
+              color: Colors.green.shade800),
+          _statCell('$totalPlayed', _colPlayed,
+              color: Colors.green.shade800),
+          _statCell('${pct.toStringAsFixed(1)}%', _colPct,
+              color: _pctColor(pct, totalPaid > 0)),
+          _statCell('$left', _colLeft,
+              color: Colors.green.shade800),
+        ],
+      ),
+    );
+  }
 
   Widget _buildPTotalsFooter(
     List<DateTime> sessionDates,
@@ -1093,7 +1104,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     _ => Colors.black,
   };
 
-  Color? _pctColor(int pct, bool hasPaidSlots) {
+  Color? _pctColor(double pct, bool hasPaidSlots) {
     if (!hasPaidSlots) return Colors.grey;
     if (pct >= 75) return Colors.green.shade700;
     if (pct >= 40) return Colors.orange.shade700;
