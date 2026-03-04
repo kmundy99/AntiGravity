@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class InvitePlayerScreen extends StatefulWidget {
-  const InvitePlayerScreen({super.key});
+  final String? creatorUid;
+  const InvitePlayerScreen({super.key, this.creatorUid});
 
   @override
   State<InvitePlayerScreen> createState() => _InvitePlayerScreenState();
@@ -84,10 +85,27 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
                     'accountStatus': 'provisional',
                     'role': 'player',
                     'createdAt': FieldValue.serverTimestamp(),
+                    'created_at': FieldValue.serverTimestamp(),
+                    if (widget.creatorUid != null)
+                      'created_by_uid': widget.creatorUid,
                   });
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text(
+                          'Player added. Note: provisional accounts are auto-deleted after 30 days if the player never logs in.',
+                        ),
+                        duration: const Duration(seconds: 6),
+                        action: SnackBarAction(label: 'OK', onPressed: () {}),
+                      ),
+                    );
+                  }
+                  return;
                 }
 
-                if (mounted) Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('Add Custom Player'),
             ),

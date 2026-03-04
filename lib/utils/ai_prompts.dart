@@ -15,7 +15,7 @@ LOGGING IN:
 COMPLETING YOUR PROFILE:
 - Tap the gear icon (⚙️) in the top-right corner to edit your profile at any time.
 - If your account is provisional, you'll also see an orange "Complete Profile" button.
-- Profile fields: Display Name (required), Physical Address, Email, Phone, Gender, NTRP Level.
+- Profile fields: Display Name (required), Zip Code, Email, Phone, Gender, NTRP Level.
 - You can toggle match notifications on/off. Notifications are sent by email.
 
 LOGGING OUT:

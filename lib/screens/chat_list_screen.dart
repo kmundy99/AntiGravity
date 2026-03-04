@@ -17,8 +17,9 @@ class ChatListScreen extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('matches').snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
 
         final docs = snapshot.data!.docs;
 
@@ -29,8 +30,9 @@ class ChatListScreen extends StatelessWidget {
               matchData['organizerId'] == currentUserUid;
         }).toList();
 
-        if (myMatches.isEmpty)
+        if (myMatches.isEmpty) {
           return const Center(child: Text("No active chats"));
+        }
 
         return ListView.builder(
           itemCount: myMatches.length,

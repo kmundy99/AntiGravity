@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models.dart';
 import '../widgets/add_custom_player_button.dart';
 import '../utils/feedback_utils.dart';
+import '../utils/player_sort.dart';
 
 class SelectPlayersScreen extends StatefulWidget {
   final String currentUserUid;
@@ -91,7 +92,11 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
             }
 
             return true;
-          }).toList();
+          }).toList()
+            ..sort((a, b) => sortPlayerDocs(a, b,
+              currentUserUid: widget.currentUserUid,
+              circleRatings: currentUser.circleRatings,
+            ));
 
           return Column(
             children: [

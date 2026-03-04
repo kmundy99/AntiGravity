@@ -4,11 +4,13 @@ import '../invite_player.dart';
 class AddCustomPlayerButton extends StatelessWidget {
   final String label;
   final bool fullWidth;
+  final String? creatorUid;
 
   const AddCustomPlayerButton({
     super.key,
     this.label = 'Add Custom Player',
     this.fullWidth = false,
+    this.creatorUid,
   });
 
   @override
@@ -24,7 +26,7 @@ class AddCustomPlayerButton extends StatelessWidget {
       onPressed: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const InvitePlayerScreen()),
+          MaterialPageRoute(builder: (context) => InvitePlayerScreen(creatorUid: creatorUid)),
         );
       },
     );

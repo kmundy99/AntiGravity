@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models.dart';
+import 'compose_message_screen.dart';
 import 'select_players_screen.dart';
 import 'match_chat_screen.dart';
 import '../utils/feedback_utils.dart';
@@ -56,7 +57,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
           .collection('matches')
           .doc(widget.matchId)
           .get();
-      final matchData = matchDoc.data() as Map<String, dynamic>?;
+      final matchData = matchDoc.data();
       final lastMessageAt = matchData?['lastMessageAt'] as Timestamp?;
       if (lastMessageAt == null) return false;
 
@@ -214,11 +215,46 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final orgName = _match!.roster
+        .firstWhere(
+          (r) => r.uid == _match!.organizerId,
+          orElse: () => Roster(uid: '', displayName: 'Organizer', status: RosterStatus.accepted),
+        )
+        .displayName;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Manage Match"),
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.send_outlined),
+            tooltip: 'Compose Message',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ComposeMessageScreen(
+                  config: ComposeMessageConfig(
+                    organizerUid: _match!.organizerId,
+                    organizerName: orgName,
+                    availableTypes: const [MessageType.matchInvite, MessageType.custom],
+                    initialType: MessageType.matchInvite,
+                    recipients: _match!.roster
+                        .where((r) =>
+                            r.status == RosterStatus.accepted ||
+                            r.status == RosterStatus.invited)
+                        .map((r) => RecipientInfo(uid: r.uid, displayName: r.displayName))
+                        .toList(),
+                    contextType: 'match',
+                    contextId: widget.matchId,
+                    match: _match,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'feedbackBtnOrgDash',
@@ -351,7 +387,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     ),
                   );
 
-                  if (selectedUsers != null && selectedUsers.isNotEmpty) {
+                  if (selectedUsers != null && selectedUsers.isNotEmpty && context.mounted) {
                     final orgName = _match!.roster
                         .firstWhere(
                           (r) => r.uid == _match!.organizerId,

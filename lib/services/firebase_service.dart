@@ -36,4 +36,135 @@ class FirebaseService {
       (snap) => snap.docs.map((d) => User.fromFirestore(d)).toList(),
     );
   }
+
+  Future<String> createContract(Contract contract) async {
+    final ref = await _db.collection('contracts').add(contract.toFirestore());
+    return ref.id;
+  }
+
+  Future<void> updateContract(String id, Map<String, dynamic> fields) async {
+    await _db.collection('contracts').doc(id).update(fields);
+  }
+
+  Stream<Contract?> getContractByOrganizer(String organizerUid) {
+    return _db
+        .collection('contracts')
+        .where('organizer_id', isEqualTo: organizerUid)
+        .limit(1)
+        .snapshots()
+        .map((snap) {
+          if (snap.docs.isEmpty) return null;
+          return Contract.fromFirestore(snap.docs.first);
+        });
+  }
+
+  Stream<Contract?> getContractStream(String contractId) {
+    return _db
+        .collection('contracts')
+        .doc(contractId)
+        .snapshots()
+        .map((snap) => snap.exists ? Contract.fromFirestore(snap) : null);
+  }
+
+  Stream<List<ContractSession>> getSessionsStream(String contractId) {
+    return _db
+        .collection('contracts')
+        .doc(contractId)
+        .collection('sessions')
+        .orderBy('date')
+        .snapshots()
+        .map((snap) => snap.docs.map(ContractSession.fromFirestore).toList());
+  }
+
+  Future<void> upsertSession(String contractId, ContractSession session) async {
+    await _db
+        .collection('contracts')
+        .doc(contractId)
+        .collection('sessions')
+        .doc(session.id)
+        .set(session.toFirestore(), SetOptions(merge: true));
+  }
+
+  Future<void> logMessage(MessageLogEntry entry) async {
+    final now = DateTime.now();
+    final data = entry.toFirestore();
+    data['sent_at'] = Timestamp.fromDate(now);
+    data['expire_at'] = Timestamp.fromDate(now.add(const Duration(days: 90)));
+    await _db.collection('message_log').add(data);
+  }
+
+  Stream<List<MessageLogEntry>> getSentMessagesStream(
+    String sentBy, {
+    String? contextId,
+  }) {
+    Query query = _db
+        .collection('message_log')
+        .where('sent_by', isEqualTo: sentBy)
+        .orderBy('sent_at', descending: true);
+    if (contextId != null) {
+      query = query.where('context_id', isEqualTo: contextId);
+    }
+    return query.snapshots().map(
+      (snap) => snap.docs.map(MessageLogEntry.fromFirestore).toList(),
+    );
+  }
+
+  // ── Scheduled Messages ──────────────────────────────────────────────────────
+
+  Stream<List<ScheduledMessage>> getScheduledMessagesStream(String organizerId) {
+    return _db
+        .collection('scheduled_messages')
+        .where('organizer_id', isEqualTo: organizerId)
+        .snapshots()
+        .map((snap) {
+          final list = snap.docs.map(ScheduledMessage.fromFirestore).toList();
+          list.sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+          return list;
+        });
+  }
+
+  /// Cancels all existing pending scheduled messages for [contractId],
+  /// then batch-writes [messages].
+  Future<void> saveScheduledMessages(
+    String contractId,
+    List<ScheduledMessage> messages,
+  ) async {
+    final batch = _db.batch();
+
+    // Cancel existing pending messages for this contract
+    // Single-field query only — no composite index required
+    final existing = await _db
+        .collection('scheduled_messages')
+        .where('contract_id', isEqualTo: contractId)
+        .get();
+    for (final doc in existing.docs) {
+      if (doc.data()['status'] == 'pending') {
+        batch.update(doc.reference, {'status': 'cancelled'});
+      }
+    }
+
+    // Write new messages
+    for (final msg in messages) {
+      final ref = _db.collection('scheduled_messages').doc();
+      batch.set(ref, msg.toFirestore());
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> updateScheduledMessage(String id, Map<String, dynamic> fields) async {
+    await _db.collection('scheduled_messages').doc(id).update(fields);
+  }
+
+  // ── Player Contract Lookup ──────────────────────────────────────────────────
+
+  /// Returns all contracts where the given player UID is in [roster_uids].
+  /// Requires a Firestore composite index on (roster_uids array-contains).
+  Stream<List<Contract>> getContractsByPlayer(String playerUid) {
+    return _db
+        .collection('contracts')
+        .where('roster_uids', arrayContains: playerUid)
+        .snapshots()
+        .map((snap) => snap.docs.map(Contract.fromFirestore).toList());
+  }
 }

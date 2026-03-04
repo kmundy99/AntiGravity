@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'models.dart';
 import 'secrets.dart';
 import 'screens/select_players_screen.dart';
@@ -300,15 +299,13 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             spacing: 8,
             children: [
               Chip(label: Text(_organizerName)),
-              ..._selectedRecruits
-                  .map(
-                    (player) => Chip(
-                      label: Text(player.displayName),
-                      onDeleted: () =>
-                          setState(() => _selectedRecruits.remove(player)),
-                    ),
-                  )
-                  .toList(),
+              ..._selectedRecruits.map(
+                (player) => Chip(
+                  label: Text(player.displayName),
+                  onDeleted: () =>
+                      setState(() => _selectedRecruits.remove(player)),
+                ),
+              ),
             ],
           ),
 
@@ -394,15 +391,17 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
 
                       final matchId = docRef.id;
 
-                      await MatchService.addPlayersToMatch(
-                        context: context,
-                        match: newMatch,
-                        matchId: matchId,
-                        newRecruits: _selectedRecruits,
-                        organizerName: _organizerName,
-                      );
+                      if (context.mounted) {
+                        await MatchService.addPlayersToMatch(
+                          context: context,
+                          match: newMatch,
+                          matchId: matchId,
+                          newRecruits: _selectedRecruits,
+                          organizerName: _organizerName,
+                        );
+                      }
 
-                      if (mounted) {
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Match saved successfully!'),
@@ -411,7 +410,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                         Navigator.pop(context);
                       }
                     } catch (e) {
-                      if (mounted) {
+                      if (context.mounted) {
                         setState(() => _isSaving = false);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Error saving: $e')),

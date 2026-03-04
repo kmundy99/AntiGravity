@@ -2,23 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'firebase_options.dart';
-import 'secrets.dart';
 import 'create_match.dart';
 import 'utils/feedback_utils.dart';
 import 'models.dart';
 import 'screens/history_screen.dart';
 import 'screens/organizer_dashboard_screen.dart';
 import 'screens/players_directory_screen.dart';
+import 'screens/contract_screen.dart';
+import 'screens/contract_enroll_screen.dart';
+import 'screens/contract_availability_response_screen.dart';
+import 'screens/contract_session_player_screen.dart';
+import 'screens/complete_profile_screen.dart';
+import 'screens/contract_sub_in_screen.dart';
+import 'services/firebase_service.dart';
 
 import 'screens/match_chat_screen.dart';
-import 'services/notification_service.dart';
 import 'services/match_service.dart';
 import 'utils/email_error_checker.dart';
 import 'utils/calendar_export.dart';
@@ -39,6 +39,54 @@ class TennisApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       onGenerateRoute: (settings) {
+        if (settings.name != null && settings.name!.startsWith('/session/')) {
+          final uri = Uri.parse(settings.name!);
+          final segments = uri.pathSegments;
+          // segments: ['session', '<contractId>', '<sessionDate>', 'manage'|'subin']
+          final contractId = segments.length > 1 ? segments[1] : '';
+          final sessionDate = segments.length > 2 ? segments[2] : '';
+          final action = segments.length > 3 ? segments[3] : 'manage';
+          final uid = uri.queryParameters['uid'] ?? '';
+          if (action == 'subin') {
+            return MaterialPageRoute(
+              builder: (_) => ContractSubInScreen(
+                contractId: contractId,
+                sessionDate: sessionDate,
+                playerUid: uid,
+              ),
+            );
+          }
+          return MaterialPageRoute(
+            builder: (_) => ContractSessionPlayerScreen(
+              contractId: contractId,
+              sessionDate: sessionDate,
+              playerUid: uid,
+            ),
+          );
+        }
+        if (settings.name != null && settings.name!.startsWith('/availability/')) {
+          final uri = Uri.parse(settings.name!);
+          final segments = uri.pathSegments;
+          // segments: ['availability', '<contractId>', '<sessionDate>']
+          final contractId = segments.length > 1 ? segments[1] : '';
+          final sessionDate = segments.length > 2 ? segments[2] : '';
+          final uid = uri.queryParameters['uid'] ?? '';
+          return MaterialPageRoute(
+            builder: (_) => ContractAvailabilityResponseScreen(
+              contractId: contractId,
+              sessionDate: sessionDate,
+              playerUid: uid,
+            ),
+          );
+        }
+        if (settings.name != null && settings.name!.startsWith('/contract/')) {
+          final uri = Uri.parse(settings.name!);
+          final contractId = uri.pathSegments.length > 1 ? uri.pathSegments[1] : '';
+          final uid = uri.queryParameters['uid'] ?? '';
+          return MaterialPageRoute(
+            builder: (_) => HomeScreen(initialUid: uid, initialContractId: contractId),
+          );
+        }
         if (settings.name != null && settings.name!.startsWith('/match/')) {
           final uri = Uri.parse(settings.name!);
           final pathSegments = uri.pathSegments;
@@ -74,7 +122,8 @@ class _MeetingDataSource extends CalendarDataSource {
 class HomeScreen extends StatefulWidget {
   final String? initialMatchId;
   final String? initialUid;
-  const HomeScreen({super.key, this.initialMatchId, this.initialUid});
+  final String? initialContractId;
+  const HomeScreen({super.key, this.initialMatchId, this.initialUid, this.initialContractId});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -132,6 +181,13 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<QuerySnapshot>? _matchesSub;
   StreamSubscription<QuerySnapshot>? _usersSub;
   late _MeetingDataSource _calendarDataSource;
+
+  // Contract calendar state
+  final _firebaseService = FirebaseService();
+  List<Contract> _playerContracts = [];
+  final Map<String, List<ContractSession>> _contractSessions = {};
+  StreamSubscription<List<Contract>>? _playerContractsSub;
+  final List<StreamSubscription<dynamic>> _contractSessionSubs = [];
 
   static const _avDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   static const _avDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -195,6 +251,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _matchesSub?.cancel();
     _usersSub?.cancel();
+    _playerContractsSub?.cancel();
+    for (final sub in _contractSessionSubs) {
+      sub.cancel();
+    }
     _phoneCtrl.dispose();
     _nameCtrl.dispose();
     _addressCtrl.dispose();
@@ -257,6 +317,27 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       return null;
     }
+  }
+
+  void _subscribeToPlayerContracts(String uid) {
+    _playerContractsSub?.cancel();
+    _playerContractsSub = _firebaseService.getContractsByPlayer(uid).listen((contracts) {
+      if (!mounted) return;
+      setState(() => _playerContracts = contracts);
+      for (final sub in _contractSessionSubs) {
+        sub.cancel();
+      }
+      _contractSessionSubs.clear();
+      for (final c in contracts) {
+        final sub = _firebaseService.getSessionsStream(c.id).listen((sessions) {
+          if (!mounted) return;
+          setState(() => _contractSessions[c.id] = sessions);
+          _refreshCalendarData();
+        });
+        _contractSessionSubs.add(sub);
+      }
+      _refreshCalendarData();
+    });
   }
 
   void _loadUser() async {
@@ -322,11 +403,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Now that _myUid is set, load chat reads and re-color the calendar
           _loadChatReads(_allMatches);
+          _subscribeToPlayerContracts(storedUid);
           _refreshCalendarData();
 
           if (widget.initialMatchId != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _showMatchDetailsDialog(widget.initialMatchId!);
+            });
+          }
+
+          if (widget.initialContractId != null && widget.initialUid != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ContractEnrollScreen(
+                      contractId: widget.initialContractId!,
+                      playerUid: widget.initialUid!,
+                    ),
+                  ),
+                );
+              }
             });
           }
 
@@ -386,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? (_user?.phoneNumber ?? '')
           : _phoneFormCtrl.text,
       notifActive: _isQuickSetup ? false : _notifOn,
-      notifMode: 'Email',
+      notifMode: _notifMode,
       accountStatus: _isQuickSetup
           ? AccountStatus.provisional
           : AccountStatus.fully_registered,
@@ -449,45 +547,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       });
     }
-  }
-
-  Future<void> _launchMap() async {
-    final address = Uri.encodeComponent(_addressCtrl.text);
-    final url = Uri.parse(
-      "https://www.google.com/maps/search/?api=1&query=$address",
-    );
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Could not open maps")));
-    }
-  }
-
-  Future<List<String>> _fetchPlaceSuggestions(String input) async {
-    if (input.isEmpty) return [];
-
-    try {
-      final response = await http.post(
-        Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': placesApiKey,
-        },
-        body: jsonEncode({'input': input}),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        final suggestions = json['suggestions'] as List? ?? [];
-        return suggestions
-            .where((s) => s['placePrediction'] != null)
-            .map((s) => s['placePrediction']['text']['text'] as String)
-            .toList();
-      }
-    } catch (e) {
-      debugPrint('Places autocomplete error: $e');
-    }
-
-    return [];
   }
 
   @override
@@ -554,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildDraggableFab(
               offset: _feedbackBtnOffset!,
               onPressed: () {
-                final tabs = ["Upcoming", "Players", "History"];
+                final tabs = ["Create Match", "Players", "History", "Contract"];
                 showFeedbackModal(
                   context,
                   _myUid,
@@ -578,10 +637,11 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.sports_tennis),
-            label: "Upcoming",
+            label: "Create Match",
           ),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: "Players"),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "History"),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: "Contract"),
         ],
       ),
     );
@@ -600,9 +660,21 @@ class _HomeScreenState extends State<HomeScreen> {
               _isEditingProfile = true;
             });
           },
+          organizerContractRosterUids: _playerContracts
+              .where((c) => c.organizerId == _myUid)
+              .map((c) => c.rosterUids)
+              .firstOrNull,
         );
       case 2:
         return const HistoryScreen();
+      case 3:
+        return ContractScreen(
+          currentUserUid: _myUid ?? '',
+          organizerName: _user?.displayName ?? '',
+          playerContracts: _playerContracts
+              .where((c) => c.organizerId != _myUid)
+              .toList(),
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -819,6 +891,33 @@ class _HomeScreenState extends State<HomeScreen> {
           notes: doc.id,
         ),
       );
+    }
+
+    // ── Contract session appointments (indigo) ────────────────────────────────
+    for (final contract in _playerContracts) {
+      final sessions = _contractSessions[contract.id] ?? [];
+      for (final session in sessions) {
+        final status = session.assignment[_myUid!];
+        if (status != 'confirmed' && status != 'reserve') continue;
+        final isReserve = status == 'reserve';
+        final start = DateTime(
+          session.date.year, session.date.month, session.date.day,
+          contract.startMinutes ~/ 60, contract.startMinutes % 60,
+        );
+        final end = DateTime(
+          session.date.year, session.date.month, session.date.day,
+          contract.endMinutes ~/ 60, contract.endMinutes % 60,
+        );
+        final noteKey = 'contract:${contract.id}:${session.id}';
+        fetchedAppointments.add(Appointment(
+          startTime: start,
+          endTime: end,
+          subject: '${contract.clubName}${isReserve ? " (Reserve)" : ""}',
+          color: isReserve ? Colors.indigo.shade300 : Colors.indigo.shade600,
+          id: noteKey,
+          notes: noteKey,
+        ));
+      }
     }
 
     _calendarDataSource.updateAppointments(fetchedAppointments);
@@ -1095,8 +1194,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (details.appointments != null &&
                         details.appointments!.isNotEmpty) {
                       final Appointment appt = details.appointments!.first;
-                      final docId = appt.notes;
-                      if (docId != null) {
+                      final docId = appt.notes?.toString() ?? '';
+                      if (docId.startsWith('contract:')) {
+                        final parts = docId.split(':');
+                        if (parts.length >= 3 && _myUid != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ContractSessionPlayerScreen(
+                                contractId: parts[1],
+                                sessionDate: parts[2],
+                                playerUid: _myUid!,
+                              ),
+                            ),
+                          );
+                        }
+                      } else if (docId.isNotEmpty) {
                         _showMatchDetailsDialog(docId);
                       }
                     } else if (details.targetElement ==
@@ -1207,7 +1320,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool isInvited =
         myRosterEntry != null && myRosterEntry.status == RosterStatus.invited;
 
-    final int reqCount = match.requiredCount ?? 4;
+    final int reqCount = match.requiredCount;
     final int acceptedCount = match.roster
         .where((r) => r.status == RosterStatus.accepted)
         .length;
@@ -1354,8 +1467,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           );
-                        })
-                        .toList(),
+                        }),
                   ],
                 ),
               ),
@@ -1508,6 +1620,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         );
+                        if (success && _myUid != null) {
+                          final userDoc = await FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(_myUid!)
+                              .get();
+                          if (context.mounted && userDoc.exists &&
+                              isProfileIncomplete(userDoc.data()!)) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CompleteProfileScreen(
+                                    playerUid: _myUid!),
+                              ),
+                            );
+                          }
+                        }
                       }
                     },
                     child: const Text("Accept Invite"),
@@ -1665,7 +1793,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Cache BOTH the UID and the contact used to resolve it.
                   // On future logins with the same contact, we skip Firestore.
-                  await prefs.setString('user_uid', uid!);
+                  await prefs.setString('user_uid', uid);
                   await prefs.setString('user_login_contact', loginId);
                   _loadUser();
                 },
@@ -2020,7 +2148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   value: _isQuickSetup,
                   onChanged: (v) => setState(() => _isQuickSetup = v),
-                  activeColor: Colors.blue,
+                  activeThumbColor: Colors.blue,
                 ),
               const SizedBox(height: 10),
               TextField(
@@ -2030,39 +2158,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               if (!_isQuickSetup) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TypeAheadField<String>(
-                        controller: _addressCtrl,
-                        suggestionsCallback: _fetchPlaceSuggestions,
-                        itemBuilder: (context, suggestion) {
-                          return ListTile(
-                            leading: const Icon(Icons.place),
-                            title: Text(suggestion),
-                          );
-                        },
-                        onSelected: (suggestion) {
-                          setState(() {
-                            _addressCtrl.text = suggestion;
-                          });
-                        },
-                        builder: (context, controller, focusNode) {
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: "Physical Address",
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.map, color: Colors.blue),
-                      onPressed: _launchMap,
-                    ),
-                  ],
+                TextField(
+                  controller: _addressCtrl,
+                  decoration: const InputDecoration(labelText: "Zip Code"),
+                  keyboardType: TextInputType.number,
                 ),
                 TextField(
                   controller: _emailCtrl,
@@ -2110,8 +2209,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 SwitchListTile(
                   title: const Text("New Match Notifications Active"),
                   subtitle: const Text(
-                    "Get notified when you're invited to new matches. "
-                    "Match updates always send for matches you're on.",
+                    "Get notified when you are invited to new matches? "
+                    "(You will always get notified about matches you are signed up for).",
                   ),
                   value: _notifOn,
                   onChanged: (v) => setState(() => _notifOn = v),

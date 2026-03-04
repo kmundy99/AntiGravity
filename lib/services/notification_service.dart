@@ -39,6 +39,7 @@ class NotificationService {
     required String subject,
     required String textBody,
     required String htmlBody,
+    bool ignoreNotifActive = false,
   }) async {
     String? phone;
     String? email;
@@ -53,7 +54,7 @@ class NotificationService {
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
-        if (data['notif_active'] == false) return;
+        if (!ignoreNotifActive && data['notif_active'] == false) return;
         notifMode = data['notif_mode'] ?? notifMode;
 
         final primaryContact = data['primary_contact'] ?? '';
@@ -374,6 +375,194 @@ class NotificationService {
       textBody: message,
       htmlBody: '<p>$message</p>',
     );
+  }
+
+  /// Returns the default message template for a contract enrollment invite.
+  /// The literal string `{link}` is a placeholder that gets replaced with each
+  /// player's unique enrollment URL before sending.
+  static String contractInviteTemplate({
+    required Contract contract,
+    required String organizerName,
+  }) {
+    final orgName = cleanName(organizerName);
+    const weekdayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final weekdayName = weekdayNames[contract.weekday];
+
+    String fmtTime(int minutes) {
+      final h = minutes ~/ 60;
+      final m = minutes % 60;
+      final suffix = h < 12 ? 'AM' : 'PM';
+      final h12 = h % 12 == 0 ? 12 : h % 12;
+      return '$h12:${m.toString().padLeft(2, '0')} $suffix';
+    }
+    String fmtDate(DateTime d) => '${d.month}/${d.day}/${d.year}';
+
+    final startStr = fmtTime(contract.startMinutes);
+    final endStr = fmtTime(contract.endMinutes);
+    final seasonStr = '${fmtDate(contract.seasonStart)} – ${fmtDate(contract.seasonEnd)}';
+    final priceStr = contract.pricePerSlot > 0
+        ? '\$${contract.pricePerSlot.toStringAsFixed(2)}/slot'
+        : 'TBD';
+
+    return '$orgName has invited you to join the ${contract.clubName} court contract. '
+        'Schedule: ${weekdayName}s $startStr–$endStr, $seasonStr. '
+        'Price: $priceStr. '
+        'Enroll here: {link}';
+  }
+
+  /// Sends a contract enrollment invite. If [customBody] is provided it is used
+  /// as the message text; otherwise the default template is used. In both cases
+  /// the literal `{link}` in the body is replaced with the player's unique URL.
+  static Future<void> sendContractInvite({
+    required String playerUid,
+    required Contract contract,
+    required String contractId,
+    required String organizerName,
+    String? customBody,
+  }) async {
+    final link = 'https://www.finapps.com/#/contract/$contractId?uid=${Uri.encodeComponent(playerUid)}';
+
+    // textBody keeps the raw URL for SMS delivery
+    final textBody = (customBody ?? contractInviteTemplate(
+      contract: contract,
+      organizerName: organizerName,
+    )).replaceAll('{link}', link);
+
+    // htmlBody strips the raw URL from the prose and uses a button instead
+    final htmlProse = textBody
+        .replaceAll('Enroll here: $link', '')
+        .replaceAll(link, '')
+        .trimRight();
+    final htmlBody =
+        '<p>${htmlProse.replaceAll('\n', '<br/>')}</p>'
+        '<br/><p>${_htmlButton(link, 'Enroll Now')}</p>';
+
+    await _send(
+      uid: playerUid,
+      subject: 'Court Contract Invitation: ${contract.clubName}',
+      textBody: textBody,
+      htmlBody: htmlBody,
+      ignoreNotifActive: true,
+    );
+  }
+
+  static Future<void> sendContractPin({
+    required String organizerUid,
+    required String pin,
+    required String clubName,
+  }) async {
+    final textBody = 'Your organizer PIN for the $clubName contract is: $pin';
+    final htmlBody =
+        '<p>Your organizer PIN for the <b>$clubName</b> contract is:</p>'
+        '<h2 style="letter-spacing: 6px; font-family: monospace;">$pin</h2>'
+        '<p>Keep this PIN private — it protects your contract management actions.</p>';
+
+    await _send(
+      uid: organizerUid,
+      subject: 'Your $clubName Contract PIN',
+      textBody: textBody,
+      htmlBody: htmlBody,
+      ignoreNotifActive: true,
+    );
+  }
+
+  /// Returns the default message template for a session availability request.
+  /// The literal string `{link}` is replaced with each player's unique response URL.
+  static String availabilityRequestTemplate({
+    required Contract contract,
+    required DateTime sessionDate,
+    required String organizerName,
+  }) {
+    final orgName = cleanName(organizerName);
+    final df = DateFormat('EEEE, MMMM d');
+    final dayStr = df.format(sessionDate);
+
+    String fmtTime(int minutes) {
+      final h = minutes ~/ 60;
+      final m = minutes % 60;
+      final suffix = h < 12 ? 'AM' : 'PM';
+      final h12 = h % 12 == 0 ? 12 : h % 12;
+      return '$h12:${m.toString().padLeft(2, '0')} $suffix';
+    }
+
+    final timeStr = '${fmtTime(contract.startMinutes)}–${fmtTime(contract.endMinutes)}';
+    return '$orgName is checking availability for ${contract.clubName} on $dayStr ($timeStr). '
+        'Please let us know if you can make it: {link}';
+  }
+
+  /// Sends an availability request to a single player for a specific session.
+  static Future<void> sendAvailabilityRequest({
+    required String playerUid,
+    required String contractId,
+    required DateTime sessionDate,
+    required Contract contract,
+    required String organizerName,
+    String? customBody,
+  }) async {
+    final dateKey = '${sessionDate.year}-'
+        '${sessionDate.month.toString().padLeft(2, '0')}-'
+        '${sessionDate.day.toString().padLeft(2, '0')}';
+    final link = 'https://www.finapps.com/#/availability/$contractId/$dateKey'
+        '?uid=${Uri.encodeComponent(playerUid)}';
+
+    final textBody = (customBody ?? availabilityRequestTemplate(
+      contract: contract,
+      sessionDate: sessionDate,
+      organizerName: organizerName,
+    )).replaceAll('{link}', link);
+
+    final htmlProse = textBody.replaceAll(link, '').trimRight();
+    final htmlBody =
+        '<p>${htmlProse.replaceAll('\n', '<br/>')}</p>'
+        '<br/><p>${_htmlButton(link, 'Respond Now')}</p>';
+
+    await _send(
+      uid: playerUid,
+      subject: 'Are you available? ${contract.clubName} — '
+          '${DateFormat('M/d').format(sessionDate)}',
+      textBody: textBody,
+      htmlBody: htmlBody,
+      ignoreNotifActive: true,
+    );
+  }
+
+  /// Sends a composed message to a single recipient, substituting
+  /// `{playerName}` → recipientDisplayName and `{link}` → the result of
+  /// linkBuilder(uid) (if provided). Bypasses `notif_active` by default
+  /// because this is an explicit organizer action.
+  static Future<void> sendComposed({
+    required String recipientUid,
+    required String recipientDisplayName,
+    required String subject,
+    required String body,
+    String? Function(String uid)? linkBuilder,
+    bool ignoreNotifActive = true,
+  }) async {
+    String resolvedBody = body.replaceAll('{playerName}', recipientDisplayName);
+    if (linkBuilder != null) {
+      final link = linkBuilder(recipientUid) ?? '';
+      resolvedBody = resolvedBody.replaceAll('{link}', link);
+
+      // Build clean HTML: strip raw URL from prose, use a button instead
+      final htmlProse = resolvedBody.replaceAll(link, '').trimRight();
+      final htmlBody = '<p>${htmlProse.replaceAll('\n', '<br/>')}</p>'
+          '${link.isNotEmpty ? '<br/><p>${_htmlButton(link, 'Open')}</p>' : ''}';
+      await _send(
+        uid: recipientUid,
+        subject: subject,
+        textBody: resolvedBody,
+        htmlBody: htmlBody,
+        ignoreNotifActive: ignoreNotifActive,
+      );
+    } else {
+      await _send(
+        uid: recipientUid,
+        subject: subject,
+        textBody: resolvedBody,
+        htmlBody: '<p>${resolvedBody.replaceAll('\n', '<br/>')}</p>',
+        ignoreNotifActive: ignoreNotifActive,
+      );
+    }
   }
 
   static Future<void> sendChatNotification({

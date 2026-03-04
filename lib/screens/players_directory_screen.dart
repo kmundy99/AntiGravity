@@ -4,15 +4,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../models.dart';
 import '../widgets/add_custom_player_button.dart';
+import '../utils/player_sort.dart';
+import 'compose_message_screen.dart';
 
 class PlayersDirectoryScreen extends StatefulWidget {
   final String currentUserUid;
   final VoidCallback onEditProfile;
+  /// UIDs from the contract this user organizes; null if they have no contract.
+  final List<String>? organizerContractRosterUids;
 
   const PlayersDirectoryScreen({
     super.key,
     required this.currentUserUid,
     required this.onEditProfile,
+    this.organizerContractRosterUids,
   });
 
   @override
@@ -21,6 +26,7 @@ class PlayersDirectoryScreen extends StatefulWidget {
 
 class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
   final Set<String> _selectedPlayers = {};
+  final Map<String, String> _selectedPlayerNames = {};
 
   // Filter State
   double _filterMinNtrp = 0.0;
@@ -28,14 +34,16 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
   String _filterLocation = "";
   String _filterName = "";
   String _filterGender = "Any";
+  bool _filterMyContract = false;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('users').snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
 
         final docs = snapshot.data!.docs;
 
@@ -59,8 +67,9 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
 
           if (_filterName.trim().isNotEmpty) {
             final nameStr = user.displayName.toLowerCase();
-            if (!nameStr.contains(_filterName.trim().toLowerCase()))
+            if (!nameStr.contains(_filterName.trim().toLowerCase())) {
               return false;
+            }
           }
 
           if (_filterLocation.isNotEmpty) {
@@ -78,28 +87,18 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
             return false;
           }
 
+          if (_filterMyContract) {
+            final rosterUids = widget.organizerContractRosterUids;
+            if (rosterUids == null || !rosterUids.contains(doc.id)) return false;
+          }
+
           return true;
         }).toList();
 
-        // SORTING LOGIC:
-        // 1. Current user always first
-        // 2. Then by Circle number (unassigned goes last)
-        // 3. Then by Name
-        filteredDocs.sort((a, b) {
-          if (a.id == widget.currentUserUid) return -1;
-          if (b.id == widget.currentUserUid) return 1;
-
-          final aCircle = currentUser.circleRatings[a.id] ?? 999;
-          final bCircle = currentUser.circleRatings[b.id] ?? 999;
-
-          if (aCircle != bCircle) return aCircle.compareTo(bCircle);
-
-          final aUser = User.fromFirestore(a);
-          final bUser = User.fromFirestore(b);
-          return aUser.displayName.toLowerCase().compareTo(
-            bUser.displayName.toLowerCase(),
-          );
-        });
+        filteredDocs.sort((a, b) => sortPlayerDocs(a, b,
+          currentUserUid: widget.currentUserUid,
+          circleRatings: currentUser.circleRatings,
+        ));
 
         return Column(
           children: [
@@ -150,6 +149,13 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                     onChanged: (val) => setState(() => _filterGender = val!),
                   ),
                 ),
+                if (widget.organizerContractRosterUids != null)
+                  SwitchListTile(
+                    title: const Text('My Contract players only'),
+                    subtitle: const Text('Show only players on your contract roster'),
+                    value: _filterMyContract,
+                    onChanged: (val) => setState(() => _filterMyContract = val),
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -189,11 +195,12 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                 const SizedBox(height: 10),
               ],
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: AddCustomPlayerButton(
                 label: 'Add Custom Player',
                 fullWidth: true,
+                creatorUid: widget.currentUserUid,
               ),
             ),
             Expanded(
@@ -255,6 +262,32 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       },
                       child: const Text("View Availability Heatmap"),
                     ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.send, size: 16),
+                      label: const Text("Compose Message"),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(40),
+                        backgroundColor: Colors.blue.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ComposeMessageScreen(
+                            config: ComposeMessageConfig(
+                              organizerUid: widget.currentUserUid,
+                              availableTypes: const [MessageType.custom],
+                              initialType: MessageType.custom,
+                              recipients: _selectedPlayerNames.entries
+                                  .map((e) => RecipientInfo(uid: e.key, displayName: e.value))
+                                  .toList(),
+                              contextType: 'general',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -293,8 +326,10 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
             setState(() {
               if (isSelected) {
                 _selectedPlayers.remove(docId);
+                _selectedPlayerNames.remove(docId);
               } else {
                 _selectedPlayers.add(docId);
+                _selectedPlayerNames[docId] = user.displayName;
               }
             });
           }
@@ -371,8 +406,10 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                         setState(() {
                           if (val == true) {
                             _selectedPlayers.add(docId);
+                            _selectedPlayerNames[docId] = user.displayName;
                           } else {
                             _selectedPlayers.remove(docId);
+                            _selectedPlayerNames.remove(docId);
                           }
                         });
                       },
@@ -461,6 +498,20 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                     _circleChip(2, assignedCircle, docId, currentUser),
                     const SizedBox(width: 4),
                     _circleChip(3, assignedCircle, docId, currentUser),
+                    if (user.accountStatus == AccountStatus.provisional &&
+                        user.createdByUid == widget.currentUserUid) ...[
+                      const Spacer(),
+                      TextButton.icon(
+                        icon: const Icon(Icons.person_remove, size: 16, color: Colors.red),
+                        label: const Text('Remove', style: TextStyle(color: Colors.red, fontSize: 13)),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _confirmDeleteProvisionalPlayer(context, docId, user.displayName),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -539,6 +590,40 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // DELETE PROVISIONAL PLAYER (created by current user, never logged in)
+  // ---------------------------------------------------------------------------
+  void _confirmDeleteProvisionalPlayer(BuildContext context, String docId, String displayName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Provisional Player?'),
+        content: Text(
+          '$displayName has not logged in yet and will be removed from the directory. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await FirebaseFirestore.instance.collection('users').doc(docId).delete();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$displayName removed.')),
+                );
+              }
+            },
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // DELETE ACCOUNT — extracted from old expansion tile
   // ---------------------------------------------------------------------------
   void _confirmDeleteAccount(BuildContext context) {
@@ -585,11 +670,11 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                   .collection('users')
                   .doc(myUid)
                   .delete();
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('user_uid');
+              await prefs.remove('user_login_contact');
+              await prefs.remove('user_display_name');
               if (context.mounted) {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('user_uid');
-                await prefs.remove('user_login_contact');
-                await prefs.remove('user_display_name');
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Account deleted.")),
