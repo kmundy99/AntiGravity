@@ -6,6 +6,7 @@ import 'dart:async';
 import 'firebase_options.dart';
 import 'create_match.dart';
 import 'utils/feedback_utils.dart';
+import 'utils/ai_prompts.dart';
 import 'models.dart';
 import 'screens/history_screen.dart';
 import 'screens/organizer_dashboard_screen.dart';
@@ -64,7 +65,8 @@ class TennisApp extends StatelessWidget {
             ),
           );
         }
-        if (settings.name != null && settings.name!.startsWith('/availability/')) {
+        if (settings.name != null &&
+            settings.name!.startsWith('/availability/')) {
           final uri = Uri.parse(settings.name!);
           final segments = uri.pathSegments;
           // segments: ['availability', '<contractId>', '<sessionDate>']
@@ -81,10 +83,13 @@ class TennisApp extends StatelessWidget {
         }
         if (settings.name != null && settings.name!.startsWith('/contract/')) {
           final uri = Uri.parse(settings.name!);
-          final contractId = uri.pathSegments.length > 1 ? uri.pathSegments[1] : '';
+          final contractId = uri.pathSegments.length > 1
+              ? uri.pathSegments[1]
+              : '';
           final uid = uri.queryParameters['uid'] ?? '';
           return MaterialPageRoute(
-            builder: (_) => HomeScreen(initialUid: uid, initialContractId: contractId),
+            builder: (_) =>
+                HomeScreen(initialUid: uid, initialContractId: contractId),
           );
         }
         if (settings.name != null && settings.name!.startsWith('/match/')) {
@@ -123,7 +128,12 @@ class HomeScreen extends StatefulWidget {
   final String? initialMatchId;
   final String? initialUid;
   final String? initialContractId;
-  const HomeScreen({super.key, this.initialMatchId, this.initialUid, this.initialContractId});
+  const HomeScreen({
+    super.key,
+    this.initialMatchId,
+    this.initialUid,
+    this.initialContractId,
+  });
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -321,7 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _subscribeToPlayerContracts(String uid) {
     _playerContractsSub?.cancel();
-    _playerContractsSub = _firebaseService.getContractsByPlayer(uid).listen((contracts) {
+    _playerContractsSub = _firebaseService.getContractsByPlayer(uid).listen((
+      contracts,
+    ) {
       if (!mounted) return;
       setState(() => _playerContracts = contracts);
       for (final sub in _contractSessionSubs) {
@@ -641,7 +653,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: "Players"),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "History"),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: "Contract"),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment),
+            label: "Contract",
+          ),
         ],
       ),
     );
@@ -901,22 +916,30 @@ class _HomeScreenState extends State<HomeScreen> {
         if (status != 'confirmed' && status != 'reserve') continue;
         final isReserve = status == 'reserve';
         final start = DateTime(
-          session.date.year, session.date.month, session.date.day,
-          contract.startMinutes ~/ 60, contract.startMinutes % 60,
+          session.date.year,
+          session.date.month,
+          session.date.day,
+          contract.startMinutes ~/ 60,
+          contract.startMinutes % 60,
         );
         final end = DateTime(
-          session.date.year, session.date.month, session.date.day,
-          contract.endMinutes ~/ 60, contract.endMinutes % 60,
+          session.date.year,
+          session.date.month,
+          session.date.day,
+          contract.endMinutes ~/ 60,
+          contract.endMinutes % 60,
         );
         final noteKey = 'contract:${contract.id}:${session.id}';
-        fetchedAppointments.add(Appointment(
-          startTime: start,
-          endTime: end,
-          subject: '${contract.clubName}${isReserve ? " (Reserve)" : ""}',
-          color: isReserve ? Colors.indigo.shade300 : Colors.indigo.shade600,
-          id: noteKey,
-          notes: noteKey,
-        ));
+        fetchedAppointments.add(
+          Appointment(
+            startTime: start,
+            endTime: end,
+            subject: '${contract.clubName}${isReserve ? " (Reserve)" : ""}',
+            color: isReserve ? Colors.indigo.shade300 : Colors.indigo.shade600,
+            id: noteKey,
+            notes: noteKey,
+          ),
+        );
       }
     }
 
@@ -1625,13 +1648,14 @@ class _HomeScreenState extends State<HomeScreen> {
                               .collection('users')
                               .doc(_myUid!)
                               .get();
-                          if (context.mounted && userDoc.exists &&
+                          if (context.mounted &&
+                              userDoc.exists &&
                               isProfileIncomplete(userDoc.data()!)) {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => CompleteProfileScreen(
-                                    playerUid: _myUid!),
+                                builder: (_) =>
+                                    CompleteProfileScreen(playerUid: _myUid!),
                               ),
                             );
                           }
@@ -1692,121 +1716,233 @@ class _HomeScreenState extends State<HomeScreen> {
   // ===========================================================================
   Widget _buildLogin() {
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.sports_tennis, size: 80, color: Colors.green),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _phoneCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Email",
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.account_circle),
+      appBar: AppBar(
+        title: const Row(
+          children: [
+            Icon(Icons.sports_tennis, color: Colors.green),
+            SizedBox(width: 8),
+            Text("Adhoc Local"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text("Help"),
+                  content: const SingleChildScrollView(
+                    child: Text(AiPrompts.feedbackAssistantGuide),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text("OK"),
+                    ),
+                  ],
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  if (_phoneCtrl.text.trim().isEmpty) return;
-
-                  String loginId = _phoneCtrl.text.trim();
-
-                  if (loginId.contains('@')) {
-                    loginId = loginId.toLowerCase();
-                  } else {
-                    loginId = loginId
-                        .replaceAll(RegExp(r'[^\d]'), '')
-                        .replaceFirst(RegExp(r'^1'), '');
-                    if (loginId.isEmpty) return;
-                  }
-
-                  final prefs = await SharedPreferences.getInstance();
-
-                  // OFFLINE-SAFE: If we previously logged in with this same
-                  // contact and have a cached UID, reuse it without querying
-                  // Firestore. This prevents stale-cache cross-user bugs.
-                  final cachedContact = prefs.getString('user_login_contact');
-                  final cachedUid = prefs.getString('user_uid');
-                  if (cachedContact == loginId &&
-                      cachedUid != null &&
-                      cachedUid.isNotEmpty) {
-                    _loadUser();
-                    return;
-                  }
-
-                  // Resolve contact → UUID (requires Firestore / network)
-                  String? uid;
-                  try {
-                    uid = await _resolveContactToUid(loginId);
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Unable to log in — please check your internet connection and try again.',
-                          ),
+              );
+            },
+            child: const Text("Help", style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.sports_tennis,
+                        size: 80,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _phoneCtrl,
+                        decoration: const InputDecoration(
+                          labelText: "Email",
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.account_circle),
                         ),
-                      );
-                    }
-                    return;
-                  }
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_phoneCtrl.text.trim().isEmpty) return;
 
-                  if (uid == null) {
-                    // New user — create a doc with auto-generated UUID
-                    // This also requires network; show error if it fails.
-                    try {
-                      final newDocRef = FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(); // auto-ID
+                          String loginId = _phoneCtrl.text.trim();
 
-                      await newDocRef.set({
-                        'display_name': '',
-                        'primary_contact': loginId,
-                        if (loginId.contains('@'))
-                          'email': loginId
-                        else
-                          'phone_number': loginId,
-                        'accountStatus': 'provisional',
-                        'role': 'player',
-                        'createdAt': FieldValue.serverTimestamp(),
-                      });
+                          if (loginId.contains('@')) {
+                            loginId = loginId.toLowerCase();
+                          } else {
+                            loginId = loginId
+                                .replaceAll(RegExp(r'[^\d]'), '')
+                                .replaceFirst(RegExp(r'^1'), '');
+                            if (loginId.isEmpty) return;
+                          }
 
-                      uid = newDocRef.id;
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Unable to create account — please check your internet connection.',
+                          final prefs = await SharedPreferences.getInstance();
+
+                          // OFFLINE-SAFE: If we previously logged in with this same
+                          // contact and have a cached UID, reuse it without querying
+                          // Firestore. This prevents stale-cache cross-user bugs.
+                          final cachedContact = prefs.getString(
+                            'user_login_contact',
+                          );
+                          final cachedUid = prefs.getString('user_uid');
+                          if (cachedContact == loginId &&
+                              cachedUid != null &&
+                              cachedUid.isNotEmpty) {
+                            _loadUser();
+                            return;
+                          }
+
+                          // Resolve contact → UUID (requires Firestore / network)
+                          String? uid;
+                          try {
+                            uid = await _resolveContactToUid(loginId);
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Unable to log in — please check your internet connection and try again.',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          if (uid == null) {
+                            // New user — create a doc with auto-generated UUID
+                            // This also requires network; show error if it fails.
+                            try {
+                              final newDocRef = FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(); // auto-ID
+
+                              await newDocRef.set({
+                                'display_name': '',
+                                'primary_contact': loginId,
+                                if (loginId.contains('@'))
+                                  'email': loginId
+                                else
+                                  'phone_number': loginId,
+                                'accountStatus': 'provisional',
+                                'role': 'player',
+                                'createdAt': FieldValue.serverTimestamp(),
+                              });
+
+                              uid = newDocRef.id;
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Unable to create account — please check your internet connection.',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          }
+
+                          // Cache BOTH the UID and the contact used to resolve it.
+                          // On future logins with the same contact, we skip Firestore.
+                          await prefs.setString('user_uid', uid);
+                          await prefs.setString('user_login_contact', loginId);
+                          _loadUser();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
+                          backgroundColor: Colors.blue.shade900,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text("Login / Register"),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            color: Colors.grey.shade200,
+            child: Column(
+              children: [
+                const Text(
+                  "© 2026 Adhoc Local | Built for the Lexington Tennis Community",
+                  style: TextStyle(color: Colors.black87, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text("About Adhoc Local"),
+                            content: const Text(
+                              "Adhoc Local is a community-driven tool designed to simplify tennis match organization in Lexington, MA. We focus on reducing the friction of invites and scheduling so you can spend more time on the court. Currently in private beta on finapps.com.",
                             ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(),
+                                child: const Text("OK"),
+                              ),
+                            ],
                           ),
                         );
-                      }
-                      return;
-                    }
-                  }
-
-                  // Cache BOTH the UID and the contact used to resolve it.
-                  // On future logins with the same contact, we skip Firestore.
-                  await prefs.setString('user_uid', uid);
-                  await prefs.setString('user_login_contact', loginId);
-                  _loadUser();
-                },
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  backgroundColor: Colors.blue.shade900,
-                  foregroundColor: Colors.white,
+                      },
+                      child: const Text(
+                        "About the App",
+                        style: TextStyle(color: Colors.blue, fontSize: 12),
+                      ),
+                    ),
+                    const Text("|", style: TextStyle(color: Colors.black54)),
+                    TextButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text("Privacy Statement"),
+                            content: const Text(
+                              "Your privacy is important to us. Adhoc Local collects only the information necessary to organize matches: your name, email, and (optionally) your phone number and NTRP level. We do not sell your data to third parties. Match chat is private to the participants and the organizer. You can delete your account and all associated data at any time in the Players tab.",
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(),
+                                child: const Text("OK"),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        "Privacy",
+                        style: TextStyle(color: Colors.blue, fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Text("Login / Register"),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
