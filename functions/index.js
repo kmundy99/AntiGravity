@@ -122,10 +122,11 @@ exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
     try {
         const msg = {
             to: to,
-            from: 'bookings@finapps.com', // Update with your verified SendGrid sender
+            from: 'bookings@finapps.com',
             subject: message.subject,
             text: message.text,
             html: message.html,
+            ...(data.reply_to ? { replyTo: data.reply_to } : {}),
         };
 
         await sgMail.send(msg);
@@ -225,7 +226,7 @@ exports.askGemini = onRequest(
  * Looks up a user's notification preferences and routes the message to
  * the appropriate Firestore queue (messages/ for SMS, mail/ for email).
  */
-async function sendToUser(db, uid, subject, textBody) {
+async function sendToUser(db, uid, subject, textBody, replyToEmail = null) {
     let phone = null;
     let email = null;
     let notifMode = "SMS";
@@ -255,21 +256,25 @@ async function sendToUser(db, uid, subject, textBody) {
     if (!phone && !email) return;
 
     const htmlBody = `<p>${textBody.replace(/\n/g, "<br/>")}</p>`;
+    const mailDoc = (to, msg) => ({
+        to, message: msg,
+        ...(replyToEmail ? { reply_to: replyToEmail } : {}),
+    });
 
     const sends = [];
 
     if (notifMode === "SMS") {
         if (phone) sends.push(db.collection("messages").add({ to: phone, body: textBody }));
-        else if (email) sends.push(db.collection("mail").add({ to: email, message: { subject, text: textBody, html: htmlBody } }));
+        else if (email) sends.push(db.collection("mail").add(mailDoc(email, { subject, text: textBody, html: htmlBody })));
     } else if (notifMode === "Email") {
-        if (email) sends.push(db.collection("mail").add({ to: email, message: { subject, text: textBody, html: htmlBody } }));
+        if (email) sends.push(db.collection("mail").add(mailDoc(email, { subject, text: textBody, html: htmlBody })));
         else if (phone) sends.push(db.collection("messages").add({ to: phone, body: textBody }));
     } else if (notifMode === "Both") {
         if (phone) sends.push(db.collection("messages").add({ to: phone, body: textBody }));
-        if (email) sends.push(db.collection("mail").add({ to: email, message: { subject, text: textBody, html: htmlBody } }));
+        if (email) sends.push(db.collection("mail").add(mailDoc(email, { subject, text: textBody, html: htmlBody })));
     } else {
         if (phone) sends.push(db.collection("messages").add({ to: phone, body: textBody }));
-        else if (email) sends.push(db.collection("mail").add({ to: email, message: { subject, text: textBody, html: htmlBody } }));
+        else if (email) sends.push(db.collection("mail").add(mailDoc(email, { subject, text: textBody, html: htmlBody })));
     }
 
     await Promise.all(sends);
@@ -290,6 +295,16 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
         const msg = doc.data();
 
         try {
+            // Skip if organizer disabled auto-send (message stays pending for manual dispatch)
+            if (msg.auto_send_enabled === false) continue;
+
+            // Look up organizer email for reply-to on all outbound emails
+            let organizerEmail = null;
+            try {
+                const orgDoc = await db.collection("users").doc(msg.organizer_id).get();
+                if (orgDoc.exists) organizerEmail = orgDoc.data().email || null;
+            } catch (_) {}
+
             // Fetch current contract roster for filter evaluation
             const contractDoc = await db.collection("contracts").doc(msg.contract_id).get();
             const roster = contractDoc.exists ? (contractDoc.data().roster || []) : [];
@@ -366,9 +381,50 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
                 const sendPromises = confirmedPlayers.map(r => {
                     const manageLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/manage?uid=${encodeURIComponent(r.uid)}`;
                     const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has been set. To manage your spot: ${manageLink}`;
-                    return sendToUser(db, r.uid, subjectLineup, body);
+                    return sendToUser(db, r.uid, subjectLineup, body, organizerEmail);
                 });
                 await Promise.all(sendPromises);
+
+                // If lineup is underfilled, notify non-confirmed players and schedule a last-ditch
+                if (confirmedCount < spotsPerSession) {
+                    const spotsNeeded = spotsPerSession - confirmedCount;
+                    const outPlayers = roster.filter(p => assignment[p.uid] !== "confirmed");
+                    if (outPlayers.length > 0) {
+                        const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${dateKey}`;
+                        const subSendPromises = outPlayers.map(r => {
+                            const subLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
+                            return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
+                        });
+                        await Promise.all(subSendPromises);
+                        await db.collection("message_log").add({
+                            sent_by: msg.organizer_id,
+                            sent_at: firestore.Timestamp.now(),
+                            type: "sub_request",
+                            subject: subjectSub,
+                            body: "Sub request for underfilled lineup",
+                            recipients: outPlayers.map(p => ({ uid: p.uid, display_name: p.display_name })),
+                            context_type: "contract",
+                            context_id: msg.contract_id,
+                            delivery_count: outPlayers.length,
+                            expire_at: firestore.Timestamp.fromMillis(firestore.Timestamp.now().toMillis() + 90 * 24 * 3600 * 1000),
+                        });
+                        // Schedule last-ditch 2 hours later
+                        await db.collection("scheduled_messages").add({
+                            organizer_id: msg.organizer_id,
+                            contract_id: msg.contract_id,
+                            type: "last_ditch",
+                            session_date: msg.session_date,
+                            scheduled_for: firestore.Timestamp.fromMillis(firestore.Timestamp.now().toMillis() + 2 * 3600 * 1000),
+                            status: "pending",
+                            subject: "Still looking for players — can you help?",
+                            body: `Hi {playerName}, we still need ${spotsNeeded} more player${spotsNeeded > 1 ? "s" : ""} for the ${dateKey} session. Claim the spot: {link}`,
+                            recipients: roster.map(p => ({ uid: p.uid, display_name: p.display_name })),
+                            recipients_filter: "all",
+                            auto_send_enabled: true,
+                        });
+                    }
+                }
 
                 const now2 = firestore.Timestamp.now();
                 await db.collection("message_log").add({
@@ -427,7 +483,7 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
                     if (linkTemplate) {
                         body = body.replace("{link}", linkTemplate(r.uid));
                     }
-                    return sendToUser(db, r.uid, msg.subject, body);
+                    return sendToUser(db, r.uid, msg.subject, body, organizerEmail);
                 });
                 await Promise.all(sendPromises);
 

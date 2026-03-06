@@ -8,6 +8,7 @@ class MessageTemplates {
     MessageType.contractInvite => 'Contract Invite',
     MessageType.paymentReminder => 'Payment Reminder',
     MessageType.availabilityRequest => 'Availability Request',
+    MessageType.availabilityReminder => 'Availability Reminder',
     MessageType.subRequest => 'Sub Request',
     MessageType.sessionLineup => 'Session Lineup',
     MessageType.paymentConfirmation => 'Payment Confirmation',
@@ -18,6 +19,7 @@ class MessageTemplates {
     MessageType.matchInvite => true,
     MessageType.contractInvite => true,
     MessageType.availabilityRequest => true,
+    MessageType.availabilityReminder => true,
     MessageType.subRequest => true,
     MessageType.sessionLineup => true,
     _ => false,
@@ -45,6 +47,12 @@ class MessageTemplates {
             ? DateFormat('M/d').format(c.sessionDate!)
             : '';
         return 'Are you available? $club${dateStr.isNotEmpty ? ' — $dateStr' : ''}';
+      case MessageType.availabilityReminder:
+        final club2 = c.contract?.clubName ?? 'Session';
+        final dateStr2 = c.sessionDate != null
+            ? DateFormat('M/d').format(c.sessionDate!)
+            : '';
+        return 'Reminder — availability needed: $club2${dateStr2.isNotEmpty ? ' — $dateStr2' : ''}';
       case MessageType.subRequest:
         return 'Sub Needed — Can You Fill In?';
       case MessageType.sessionLineup:
@@ -71,6 +79,8 @@ class MessageTemplates {
         return _paymentReminderBody(c);
       case MessageType.availabilityRequest:
         return _availabilityRequestBody(c);
+      case MessageType.availabilityReminder:
+        return _availabilityReminderBody(c);
       case MessageType.subRequest:
         return _subRequestBody(c);
       case MessageType.sessionLineup:
@@ -174,6 +184,32 @@ class MessageTemplates {
         'Please let us know if you can make it: {link}';
   }
 
+  static String _availabilityReminderBody(ComposeMessageConfig c) {
+    final orgName = _cleanName(c.organizerName);
+    if (c.contract == null || c.sessionDate == null) {
+      return 'Hi {playerName}, this is a reminder from $orgName — please enter your availability for the upcoming session before the deadline: {link}';
+    }
+    final contract = c.contract!;
+    final df = DateFormat('EEEE, MMMM d');
+    final dayStr = df.format(c.sessionDate!);
+
+    String fmtTime(int minutes) {
+      final h = minutes ~/ 60;
+      final m = minutes % 60;
+      final suffix = h < 12 ? 'AM' : 'PM';
+      final h12 = h % 12 == 0 ? 12 : h % 12;
+      return '$h12:${m.toString().padLeft(2, '0')} $suffix';
+    }
+
+    final lineupTime = fmtTime(contract.notifLineupTimeMinutes);
+    final lineupDate = DateFormat('MMM d').format(c.sessionDate!.subtract(
+      Duration(days: contract.notifLineupDaysBefore),
+    ));
+    return 'Hi {playerName}, this is a reminder from $orgName — your availability for ${contract.clubName} on $dayStr has not been received yet. '
+        'If we don\'t hear from you by $lineupDate at $lineupTime, you will be marked as Out for this session. '
+        'Please respond here: {link}';
+  }
+
   static String _sessionLineupBody(ComposeMessageConfig c) {
     if (c.contract == null || c.sessionDate == null || c.sessionAssignment == null) {
       return 'Hi {playerName}, here is the lineup for your upcoming session.';
@@ -263,6 +299,7 @@ class MessageTemplates {
         }
         return null;
       case MessageType.availabilityRequest:
+      case MessageType.availabilityReminder:
         if (c.contextId != null && c.sessionDate != null) {
           final dateKey = '${c.sessionDate!.year}-'
               '${c.sessionDate!.month.toString().padLeft(2, '0')}-'

@@ -35,8 +35,11 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
   final _notifAvailDaysCtrl = TextEditingController(text: '7');
   final _notifPaymentWeeksCtrl = TextEditingController(text: '4');
   final _notifLineupDaysCtrl = TextEditingController(text: '2');
+  final _notifAvailReminderHoursCtrl = TextEditingController(text: '24');
   TimeOfDay _notifLineupTime = const TimeOfDay(hour: 10, minute: 0);
-  bool _notificationModeAuto = true; // true = auto, false = manual
+  TimeOfDay _notifAvailTime = const TimeOfDay(hour: 10, minute: 0);
+  bool _notificationModeAuto = true; // true = auto-send, false = auto-create only
+  Map<String, Map<String, String>> _emailTemplates = {};
   bool _pinVisible = false;
   String _clubAddress = '';
   TextEditingController? _addressController;
@@ -79,11 +82,19 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
       _notifAvailDaysCtrl.text = '${c.notifAvailDaysBefore}';
       _notifPaymentWeeksCtrl.text = '${c.notifPaymentWeeksBefore}';
       _notifLineupDaysCtrl.text = '${c.notifLineupDaysBefore}';
+      _notifAvailReminderHoursCtrl.text = '${c.notifAvailReminderHoursBefore}';
       _notifLineupTime = TimeOfDay(
         hour: c.notifLineupTimeMinutes ~/ 60,
         minute: c.notifLineupTimeMinutes % 60,
       );
+      _notifAvailTime = TimeOfDay(
+        hour: c.notifAvailTimeMinutes ~/ 60,
+        minute: c.notifAvailTimeMinutes % 60,
+      );
       _notificationModeAuto = c.notificationMode != 'manual';
+      _emailTemplates = c.emailTemplates.map(
+        (k, v) => MapEntry(k, Map<String, String>.from(v)),
+      );
       _status = c.status;
     }
   }
@@ -98,6 +109,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
     _notifAvailDaysCtrl.dispose();
     _notifPaymentWeeksCtrl.dispose();
     _notifLineupDaysCtrl.dispose();
+    _notifAvailReminderHoursCtrl.dispose();
     super.dispose();
   }
 
@@ -190,6 +202,8 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
       final notifPaymentWeeks = int.tryParse(_notifPaymentWeeksCtrl.text) ?? 4;
       final notifLineupDays = int.tryParse(_notifLineupDaysCtrl.text) ?? 2;
       final notifLineupTimeMinutes = _notifLineupTime.hour * 60 + _notifLineupTime.minute;
+      final notifAvailTimeMinutes = _notifAvailTime.hour * 60 + _notifAvailTime.minute;
+      final notifAvailReminderHours = int.tryParse(_notifAvailReminderHoursCtrl.text) ?? 24;
       var roster = List<ContractPlayer>.from(existing?.roster ?? []);
 
       // Auto-add organizer to roster if not already present
@@ -231,7 +245,10 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
         notifPaymentWeeksBefore: notifPaymentWeeks,
         notifLineupDaysBefore: notifLineupDays,
         notifLineupTimeMinutes: notifLineupTimeMinutes,
+        notifAvailTimeMinutes: notifAvailTimeMinutes,
+        notifAvailReminderHoursBefore: notifAvailReminderHours,
         notificationMode: _notificationModeAuto ? 'auto' : 'manual',
+        emailTemplates: _emailTemplates,
       );
 
       String savedId;
@@ -242,10 +259,9 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
         savedId = await _firebaseService.createContract(contract);
       }
 
-      // Generate auto-scheduled messages if contract is active and in auto mode
-      if (contract.status == ContractStatus.active &&
-          contract.notificationMode == 'auto' &&
-          savedId.isNotEmpty) {
+      // Generate scheduled messages whenever contract is active (both auto and manual modes).
+      // autoSendEnabled controls whether the Cloud Function fires them automatically.
+      if (contract.status == ContractStatus.active && savedId.isNotEmpty) {
         await _generateScheduledMessages(savedId, contract);
       }
 
@@ -260,70 +276,177 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
     }
   }
 
+  /// Returns the custom template body/subject for [typeKey] if set, else the default.
+  String _tmplSubject(String typeKey, MessageType msgType, ComposeMessageConfig config) {
+    final override = _emailTemplates[typeKey]?['subject'] ?? '';
+    return override.isNotEmpty ? override : MessageTemplates.defaultSubject(msgType, config);
+  }
+
+  String _tmplBody(String typeKey, MessageType msgType, ComposeMessageConfig config) {
+    final override = _emailTemplates[typeKey]?['body'] ?? '';
+    return override.isNotEmpty ? override : MessageTemplates.defaultBody(msgType, config);
+  }
+
   Future<void> _generateScheduledMessages(String contractId, Contract contract) async {
     final organizerId = contract.organizerId;
     final organizerName = widget.organizerName;
+    final autoSend = contract.notificationMode == 'auto';
     final recipients = contract.roster
         .map((p) => RecipientInfo(uid: p.uid, displayName: p.displayName))
         .toList();
 
     final messages = <ScheduledMessage>[];
 
-    // One availability_request per session
     for (final sessionDate in contract.sessionDates) {
-      final scheduledFor = DateTime(
+      // ── Availability request ──────────────────────────────────────────────
+      final availAt = DateTime(
         sessionDate.year, sessionDate.month, sessionDate.day,
-        9, 0,
+        contract.notifAvailTimeMinutes ~/ 60,
+        contract.notifAvailTimeMinutes % 60,
       ).subtract(Duration(days: contract.notifAvailDaysBefore));
-      if (scheduledFor.isBefore(DateTime.now())) continue; // skip past dates
+      if (!availAt.isBefore(DateTime.now())) {
+        final config = ComposeMessageConfig(
+          organizerUid: organizerId,
+          organizerName: organizerName,
+          availableTypes: const [MessageType.availabilityRequest],
+          initialType: MessageType.availabilityRequest,
+          recipients: recipients,
+          contextType: 'contract',
+          contextId: contractId,
+          contract: contract,
+          sessionDate: sessionDate,
+        );
+        messages.add(ScheduledMessage(
+          contractId: contractId,
+          organizerId: organizerId,
+          type: 'availability_request',
+          sessionDate: sessionDate,
+          scheduledFor: availAt,
+          subject: _applyTokens(
+            _tmplSubject('availability_request', MessageType.availabilityRequest, config),
+            organizerName: organizerName,
+            clubName: contract.clubName,
+            sessionDate: sessionDate,
+            startMinutes: contract.startMinutes,
+            endMinutes: contract.endMinutes,
+          ),
+          body: _applyTokens(
+            _tmplBody('availability_request', MessageType.availabilityRequest, config),
+            organizerName: organizerName,
+            clubName: contract.clubName,
+            sessionDate: sessionDate,
+            startMinutes: contract.startMinutes,
+            endMinutes: contract.endMinutes,
+          ),
+          recipients: recipients,
+          recipientsFilter: 'no_response',
+          autoSendEnabled: autoSend,
+        ));
+      }
 
-      final config = ComposeMessageConfig(
-        organizerUid: organizerId,
-        organizerName: organizerName,
-        availableTypes: const [MessageType.availabilityRequest],
-        initialType: MessageType.availabilityRequest,
-        recipients: recipients,
-        contextType: 'contract',
-        contextId: contractId,
-        contract: contract,
-        sessionDate: sessionDate,
-      );
-      messages.add(ScheduledMessage(
-        contractId: contractId,
-        organizerId: organizerId,
-        type: 'availability_request',
-        sessionDate: sessionDate,
-        scheduledFor: scheduledFor,
-        subject: MessageTemplates.defaultSubject(MessageType.availabilityRequest, config),
-        body: MessageTemplates.defaultBody(MessageType.availabilityRequest, config),
-        recipients: recipients,
-        recipientsFilter: 'no_response',
-      ));
-
-      // lineup_publish per session
+      // ── Lineup auto-publish ───────────────────────────────────────────────
       final lineupAt = DateTime(
         sessionDate.year, sessionDate.month, sessionDate.day,
         contract.notifLineupTimeMinutes ~/ 60,
         contract.notifLineupTimeMinutes % 60,
       ).subtract(Duration(days: contract.notifLineupDaysBefore));
       if (!lineupAt.isBefore(DateTime.now())) {
+        final lineupConfig = ComposeMessageConfig(
+          organizerUid: organizerId,
+          organizerName: organizerName,
+          availableTypes: const [MessageType.sessionLineup],
+          initialType: MessageType.sessionLineup,
+          recipients: recipients,
+          contextType: 'contract',
+          contextId: contractId,
+          contract: contract,
+          sessionDate: sessionDate,
+        );
         messages.add(ScheduledMessage(
           contractId: contractId,
           organizerId: organizerId,
           type: 'lineup_publish',
           sessionDate: sessionDate,
           scheduledFor: lineupAt,
-          subject: 'Lineup published for your tennis session',
-          body: 'Hi {playerName}, the lineup for '
-              '${DateFormat('MMM d').format(sessionDate)} has been set. '
-              'To manage your spot: {link}',
+          subject: _applyTokens(
+            _tmplSubject('lineup_publish', MessageType.sessionLineup, lineupConfig),
+            organizerName: organizerName,
+            clubName: contract.clubName,
+            sessionDate: sessionDate,
+          ),
+          // body is ignored for lineup_publish — Cloud Function generates it
+          body: _tmplBody('lineup_publish', MessageType.sessionLineup, lineupConfig),
           recipients: recipients,
           recipientsFilter: 'all',
+          autoSendEnabled: autoSend,
         ));
+
+        // ── Availability reminder (N hours before lineup) ─────────────────
+        final reminderAt = lineupAt.subtract(
+          Duration(hours: contract.notifAvailReminderHoursBefore),
+        );
+        if (!reminderAt.isBefore(DateTime.now())) {
+          final reminderConfig = ComposeMessageConfig(
+            organizerUid: organizerId,
+            organizerName: organizerName,
+            availableTypes: const [MessageType.availabilityReminder],
+            initialType: MessageType.availabilityReminder,
+            recipients: recipients,
+            contextType: 'contract',
+            contextId: contractId,
+            contract: contract,
+            sessionDate: sessionDate,
+          );
+          messages.add(ScheduledMessage(
+            contractId: contractId,
+            organizerId: organizerId,
+            type: 'availability_reminder',
+            sessionDate: sessionDate,
+            scheduledFor: reminderAt,
+            subject: _applyTokens(
+              _tmplSubject('availability_reminder', MessageType.availabilityReminder, reminderConfig),
+              organizerName: organizerName,
+              clubName: contract.clubName,
+              sessionDate: sessionDate,
+            ),
+            body: _applyTokens(
+              _tmplBody('availability_reminder', MessageType.availabilityReminder, reminderConfig),
+              organizerName: organizerName,
+              clubName: contract.clubName,
+              sessionDate: sessionDate,
+              lineupAt: lineupAt,
+            ),
+            recipients: recipients,
+            recipientsFilter: 'no_response',
+            autoSendEnabled: autoSend,
+          ));
+        }
       }
     }
 
-    // Weekly payment_reminder from N weeks before season start until 1 week before
+    // ── Weekly payment reminders ──────────────────────────────────────────────
+    final paymentConfig = ComposeMessageConfig(
+      organizerUid: organizerId,
+      organizerName: organizerName,
+      availableTypes: const [MessageType.paymentReminder],
+      initialType: MessageType.paymentReminder,
+      recipients: recipients,
+      contextType: 'contract',
+      contextId: contractId,
+      contract: contract,
+      contractRosterPlayers: contract.roster,
+    );
+    final paySubject = _applyTokens(
+      _tmplSubject('payment_reminder', MessageType.paymentReminder, paymentConfig),
+      organizerName: organizerName,
+      clubName: contract.clubName,
+    );
+    final payBody = _applyTokens(
+      _tmplBody('payment_reminder', MessageType.paymentReminder, paymentConfig),
+      organizerName: organizerName,
+      clubName: contract.clubName,
+    );
+
     final firstReminder = DateTime(
       contract.seasonStart.year, contract.seasonStart.month, contract.seasonStart.day,
       9, 0,
@@ -336,26 +459,16 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
     DateTime reminderDate = firstReminder;
     while (!reminderDate.isAfter(lastReminder)) {
       if (!reminderDate.isBefore(DateTime.now())) {
-        final config = ComposeMessageConfig(
-          organizerUid: organizerId,
-          organizerName: organizerName,
-          availableTypes: const [MessageType.paymentReminder],
-          initialType: MessageType.paymentReminder,
-          recipients: recipients,
-          contextType: 'contract',
-          contextId: contractId,
-          contract: contract,
-          contractRosterPlayers: contract.roster,
-        );
         messages.add(ScheduledMessage(
           contractId: contractId,
           organizerId: organizerId,
           type: 'payment_reminder',
           scheduledFor: reminderDate,
-          subject: MessageTemplates.defaultSubject(MessageType.paymentReminder, config),
-          body: MessageTemplates.defaultBody(MessageType.paymentReminder, config),
+          subject: paySubject,
+          body: payBody,
           recipients: recipients,
           recipientsFilter: 'unpaid',
+          autoSendEnabled: autoSend,
         ));
       }
       reminderDate = reminderDate.add(const Duration(days: 7));
@@ -366,6 +479,180 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
 
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  static const _templateTypes = [
+    ('availability_request', 'Availability Request'),
+    ('availability_reminder', 'Availability Reminder'),
+    ('payment_reminder', 'Payment Reminder'),
+    ('lineup_publish', 'Lineup Notification'),
+  ];
+
+  /// Token-based default templates for the setup screen.
+  ///
+  /// Early-bound tokens (substituted at message-generation time):
+  ///   {organizerName}  your display name
+  ///   {clubName}       contract club name
+  ///   {sessionDate}    e.g. "Sunday, March 15"
+  ///   {sessionTime}    e.g. "12:00 PM–2:00 PM"
+  ///   {lineupDate}     date by which availability must be entered (reminder only)
+  ///   {lineupTime}     time of the lineup cutoff (reminder only)
+  ///
+  /// Late-bound tokens (substituted at send time):
+  ///   {playerName}     each recipient's display name
+  ///   {link}           per-player action link
+  (String subject, String body) _defaultTemplateText(String typeKey) =>
+      switch (typeKey) {
+        'availability_request' => (
+          'Are you available? {clubName} — {sessionDate}',
+          '{organizerName} is checking availability for {clubName} on {sessionDate} ({sessionTime}). '
+          'Please let us know if you can make it: {link}',
+        ),
+        'availability_reminder' => (
+          'Reminder — availability needed: {clubName} — {sessionDate}',
+          'Hi {playerName}, this is a reminder from {organizerName} — your availability for '
+          '{clubName} on {sessionDate} has not been received yet. '
+          'If we don\'t hear from you by {lineupDate} at {lineupTime}, you will be marked as Out. '
+          'Please respond here: {link}',
+        ),
+        'payment_reminder' => (
+          'Payment Reminder: {clubName}',
+          'Hi {playerName}, this is a friendly reminder from {organizerName} that your '
+          'payment for {clubName} is due. Please reach out to arrange payment.',
+        ),
+        _ => ( // lineup_publish — body is auto-generated by the Cloud Function
+          'Lineup for {clubName} — {sessionDate}',
+          '(The full lineup with player names is generated automatically when this message fires. '
+          'You can customise the subject line above; the body is not used.)',
+        ),
+      };
+
+  /// Substitutes early-bound tokens in a subject or body string.
+  /// Late-bound tokens ({playerName}, {link}) are left for send time.
+  String _applyTokens(
+    String text, {
+    required String organizerName,
+    required String clubName,
+    DateTime? sessionDate,
+    int? startMinutes,
+    int? endMinutes,
+    DateTime? lineupAt,
+  }) {
+    String fmtMinutes(int m) {
+      final h = m ~/ 60, min = m % 60;
+      final suffix = h < 12 ? 'AM' : 'PM';
+      final h12 = h % 12 == 0 ? 12 : h % 12;
+      return '$h12:${min.toString().padLeft(2, '0')} $suffix';
+    }
+
+    var s = text
+        .replaceAll('{organizerName}', organizerName)
+        .replaceAll('{clubName}', clubName);
+
+    if (sessionDate != null) {
+      s = s.replaceAll(
+          '{sessionDate}', DateFormat('EEEE, MMMM d').format(sessionDate));
+    }
+    if (startMinutes != null && endMinutes != null) {
+      s = s.replaceAll(
+          '{sessionTime}', '${fmtMinutes(startMinutes)}–${fmtMinutes(endMinutes)}');
+    }
+    if (lineupAt != null) {
+      s = s
+          .replaceAll('{lineupDate}', DateFormat('MMM d').format(lineupAt))
+          .replaceAll('{lineupTime}', DateFormat('h:mm a').format(lineupAt));
+    }
+    return s;
+  }
+
+  List<Widget> _buildEmailTemplateTiles(BuildContext context) {
+    return _templateTypes.map(((String typeKey, String label) rec) {
+      final typeKey = rec.$1;
+      final label = rec.$2;
+      final (defaultSubject, defaultBody) = _defaultTemplateText(typeKey);
+      final subjectCtrl = TextEditingController(
+        text: _emailTemplates[typeKey]?['subject'] ?? defaultSubject,
+      );
+      final bodyCtrl = TextEditingController(
+        text: _emailTemplates[typeKey]?['body'] ?? defaultBody,
+      );
+
+      return Card(
+        margin: const EdgeInsets.only(bottom: 6),
+        child: ExpansionTile(
+          title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          subtitle: Text(
+            (_emailTemplates[typeKey]?['subject']?.isNotEmpty == true)
+                ? 'Custom template set'
+                : 'Using default template',
+            style: TextStyle(
+              fontSize: 11,
+              color: (_emailTemplates[typeKey]?['subject']?.isNotEmpty == true)
+                  ? Colors.blue.shade700
+                  : Colors.grey,
+            ),
+          ),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: subjectCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Subject',
+                      hintText: 'Leave blank to use default',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _emailTemplates[typeKey] = {
+                          ...(_emailTemplates[typeKey] ?? {}),
+                          'subject': v,
+                        };
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: bodyCtrl,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Body',
+                      hintText: 'Use {organizerName}, {clubName}, {sessionDate}, {sessionTime}, {playerName}, {link} as tokens.',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) {
+                      setState(() {
+                        _emailTemplates[typeKey] = {
+                          ...(_emailTemplates[typeKey] ?? {}),
+                          'body': v,
+                        };
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Reset to default', style: TextStyle(fontSize: 12)),
+                    onPressed: () {
+                      final (ds, db) = _defaultTemplateText(typeKey);
+                      setState(() {
+                        _emailTemplates.remove(typeKey);
+                        subjectCtrl.text = ds;
+                        bodyCtrl.text = db;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -765,10 +1052,10 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
           const SizedBox(height: 4),
           Text(
             _status == ContractStatus.draft
-                ? 'Draft: contract is not yet visible to players. No messages are scheduled.'
+                ? 'Draft: contract is not yet visible to players. No emails are created.'
                 : _status == ContractStatus.active
-                    ? 'Active: auto-messages will be scheduled on save.'
-                    : 'Completed: season is over. No new messages will be scheduled.',
+                    ? 'Active: scheduled emails are created when you save. Use the notification mode below to control whether they auto-send.'
+                    : 'Completed: season is over. No new emails will be scheduled.',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
 
@@ -787,17 +1074,13 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Notification mode'),
-                    Text(
-                      'Manual: no auto-scheduled messages. You compose and send everything yourself.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
                   ],
                 ),
               ),
               SegmentedButton<bool>(
                 segments: const [
-                  ButtonSegment(value: true, label: Text('Auto')),
-                  ButtonSegment(value: false, label: Text('Manual')),
+                  ButtonSegment(value: true, label: Text('Auto-send')),
+                  ButtonSegment(value: false, label: Text('Hold sends')),
                 ],
                 selected: {_notificationModeAuto},
                 onSelectionChanged: (v) => setState(() => _notificationModeAuto = v.first),
@@ -808,14 +1091,15 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (!_notificationModeAuto)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'In manual mode, you can still use Compose Message to send emails/SMS, and slot assignment still works. Auto-scheduled messages will not be created.',
-                style: TextStyle(fontSize: 12, color: Colors.orange),
-              ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _notificationModeAuto
+                  ? 'Auto-create emails and auto-send emails at scheduled times.'
+                  : 'Auto-create emails, but do not auto-send. Emails appear in Notifications — you control when they go out.',
+              style: TextStyle(fontSize: 12, color: _notificationModeAuto ? Colors.grey : Colors.orange),
             ),
+          ),
           Row(
             children: [
               Expanded(
@@ -829,6 +1113,18 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
                     isDense: true,
                   ),
                 ),
+              ),
+              const SizedBox(width: 12),
+              ActionChip(
+                avatar: const Icon(Icons.access_time, size: 16),
+                label: Text(_notifAvailTime.format(context)),
+                onPressed: () async {
+                  final t = await showTimePicker(
+                    context: context,
+                    initialTime: _notifAvailTime,
+                  );
+                  if (t != null) setState(() => _notifAvailTime = t);
+                },
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -853,7 +1149,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
                   controller: _notifLineupDaysCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Auto-assign lineup',
+                    labelText: 'Auto-lineup notification',
                     suffixText: 'days before',
                     border: OutlineInputBorder(),
                     isDense: true,
@@ -872,13 +1168,61 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
                   if (t != null) setState(() => _notifLineupTime = t);
                 },
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _notifAvailReminderHoursCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Avail. reminder',
+                    suffixText: 'hrs before lineup',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
           const Text(
-            'Payment reminders repeat weekly until the season starts. Only sent to unpaid players.',
+            'Availability reminder goes only to players who haven\'t responded yet — warns them they\'ll be marked Out if no response by lineup time. Payment reminders repeat weekly; only sent to unpaid players.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
+
+          const Divider(height: 32),
+
+          // ── EMAIL TEMPLATES ───────────────────────────────────────
+          const Text(
+            'EMAIL TEMPLATES',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Customize the wording of auto-generated emails. The defaults are shown below — edit freely.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'Tokens auto-filled when messages are created:\n'
+              '  {organizerName}  your display name\n'
+              '  {clubName}       club/contract name\n'
+              '  {sessionDate}    e.g. "Sunday, March 15"\n'
+              '  {sessionTime}    e.g. "12:00 PM–2:00 PM"\n'
+              '  {lineupDate} / {lineupTime}   reminder cutoff\n\n'
+              'Tokens filled at send time (one per recipient):\n'
+              '  {playerName}     recipient\'s name\n'
+              '  {link}           tap-to-respond link',
+              style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: Colors.blueGrey),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._buildEmailTemplateTiles(context),
 
           const SizedBox(height: 32),
 

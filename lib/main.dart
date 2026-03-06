@@ -686,6 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return ContractScreen(
           currentUserUid: _myUid ?? '',
           organizerName: _user?.displayName ?? '',
+          organizerEmail: _user?.email ?? '',
           playerContracts: _playerContracts
               .where((c) => c.organizerId != _myUid)
               .toList(),

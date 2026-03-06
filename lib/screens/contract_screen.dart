@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models.dart';
@@ -15,12 +16,14 @@ import 'sent_messages_screen.dart';
 class ContractScreen extends StatefulWidget {
   final String currentUserUid;
   final String organizerName;
+  final String organizerEmail;
   /// Contracts the current user is enrolled in as a player (not as organizer).
   final List<Contract> playerContracts;
   const ContractScreen({
     super.key,
     required this.currentUserUid,
     this.organizerName = '',
+    this.organizerEmail = '',
     this.playerContracts = const [],
   });
 
@@ -36,11 +39,14 @@ class _ContractScreenState extends State<ContractScreen> {
   bool _pinVerified = false;
   bool _pinVisible = false;
   String? _pinError;
+  bool _pinFocusRequested = false;
   final _pinEntryCtrl = TextEditingController();
+  final _pinFocusNode = FocusNode();
 
   @override
   void dispose() {
     _pinEntryCtrl.dispose();
+    _pinFocusNode.dispose();
     super.dispose();
   }
 
@@ -177,6 +183,137 @@ class _ContractScreenState extends State<ContractScreen> {
     slotsCtrl.dispose();
   }
 
+  Future<void> _transferOwnership(Contract contract) async {
+    final searchCtrl = TextEditingController();
+    User? selected;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        // Declared here so they survive StatefulBuilder rebuilds
+        List<User> results = [];
+        bool searching = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            Future<void> doSearch(String q) async {
+              if (q.trim().isEmpty) {
+                setDialogState(() { results = []; searching = false; });
+                return;
+              }
+              setDialogState(() => searching = true);
+              final found = await _firebaseService.searchUsers(q.trim());
+              setDialogState(() { results = found; searching = false; });
+            }
+
+            return AlertDialog(
+              title: const Text('Transfer Ownership'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Search for a user to become the new contract organizer.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Search by name or email',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: doSearch,
+                  ),
+                  const SizedBox(height: 8),
+                  if (searching)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )),
+                  if (!searching && results.isNotEmpty)
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: results.length,
+                        itemBuilder: (_, i) {
+                          final u = results[i];
+                          final isSelected = selected?.uid == u.uid;
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Colors.blue.shade100,
+                              child: Text(
+                                u.displayName.isNotEmpty ? u.displayName[0].toUpperCase() : '?',
+                                style: TextStyle(color: Colors.blue.shade900, fontSize: 13),
+                              ),
+                            ),
+                            title: Text(u.displayName),
+                            subtitle: Text(u.email.isNotEmpty ? u.email : u.primaryContact,
+                                style: const TextStyle(fontSize: 11)),
+                            selected: isSelected,
+                            selectedTileColor: Colors.blue.shade50,
+                            onTap: () => setDialogState(() => selected = u),
+                          );
+                        },
+                      ),
+                    ),
+                  if (selected != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green.shade700, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Transfer to: ${selected!.displayName}',
+                              style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: selected == null ? null : () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white),
+                child: const Text('Transfer'),
+              ),
+            ],
+          );
+        },
+      );
+      },
+    );
+
+    searchCtrl.dispose();
+
+    if (confirmed == true && selected != null) {
+      await _firebaseService.transferContractOwnership(contract.id, selected!.uid);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ownership transferred to ${selected!.displayName}')),
+        );
+      }
+    }
+  }
+
   Future<void> _saveRoster(Contract contract, List<ContractPlayer> roster) async {
     await _firebaseService.updateContract(contract.id, {
       'roster': roster.map((p) => p.toMap()).toList(),
@@ -234,6 +371,7 @@ class _ContractScreenState extends State<ContractScreen> {
         recipientDisplayName: player.displayName,
         subject: subject,
         body: body,
+        replyToEmail: widget.organizerEmail,
       ));
       unawaited(_firebaseService.logMessage(MessageLogEntry(
         sentBy: widget.currentUserUid,
@@ -295,6 +433,7 @@ class _ContractScreenState extends State<ContractScreen> {
         subject: msg.subject,
         body: msg.body,
         linkBuilder: linkBuilder,
+        replyToEmail: widget.organizerEmail,
       ));
     }
 
@@ -331,44 +470,129 @@ class _ContractScreenState extends State<ContractScreen> {
   Future<void> _editScheduledMessage(ScheduledMessage msg) async {
     final subjectCtrl = TextEditingController(text: msg.subject);
     final bodyCtrl = TextEditingController(text: msg.body);
+    DateTime? scheduledFor = msg.scheduledFor;
 
     final saved = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Scheduled Message'),
-        content: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: subjectCtrl,
-                decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder()),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Edit Notification'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Scheduled date/time ────────────────────────────
+                  const Text('Send date/time',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blueGrey)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.calendar_today, size: 16),
+                          label: Text(
+                            scheduledFor != null
+                                ? DateFormat('MMM d, yyyy').format(scheduledFor!)
+                                : 'No date — on hold',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          onPressed: () async {
+                            final d = await showDatePicker(
+                              context: ctx,
+                              initialDate: scheduledFor ?? DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2040),
+                            );
+                            if (d != null) {
+                              setDialogState(() {
+                                final t = scheduledFor;
+                                scheduledFor = DateTime(
+                                  d.year, d.month, d.day,
+                                  t?.hour ?? 9, t?.minute ?? 0,
+                                );
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time, size: 16),
+                        label: Text(
+                          scheduledFor != null
+                              ? TimeOfDay.fromDateTime(scheduledFor!).format(ctx)
+                              : '--:--',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                            context: ctx,
+                            initialTime: scheduledFor != null
+                                ? TimeOfDay.fromDateTime(scheduledFor!)
+                                : const TimeOfDay(hour: 9, minute: 0),
+                          );
+                          if (t != null && scheduledFor != null) {
+                            setDialogState(() {
+                              scheduledFor = DateTime(
+                                scheduledFor!.year, scheduledFor!.month, scheduledFor!.day,
+                                t.hour, t.minute,
+                              );
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (scheduledFor != null)
+                    TextButton.icon(
+                      icon: const Icon(Icons.pause_circle_outline, size: 16),
+                      label: const Text('Put on hold (clear date)', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                      onPressed: () => setDialogState(() => scheduledFor = null),
+                    ),
+                  const SizedBox(height: 12),
+                  // ── Subject / body ─────────────────────────────────
+                  TextField(
+                    controller: subjectCtrl,
+                    decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bodyCtrl,
+                    maxLines: 6,
+                    decoration: const InputDecoration(labelText: 'Body', border: OutlineInputBorder()),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: bodyCtrl,
-                maxLines: 6,
-                decoration: const InputDecoration(labelText: 'Body', border: OutlineInputBorder()),
-              ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ],
       ),
     );
 
+    final savedSubject = subjectCtrl.text;
+    final savedBody = bodyCtrl.text;
     subjectCtrl.dispose();
     bodyCtrl.dispose();
 
     if (saved == true) {
-      await _firebaseService.updateScheduledMessage(msg.id, {
-        'subject': subjectCtrl.text,
-        'body': bodyCtrl.text,
-      });
+      final updates = <String, dynamic>{
+        'subject': savedSubject,
+        'body': savedBody,
+      };
+      if (scheduledFor != null) {
+        updates['scheduled_for'] = Timestamp.fromDate(scheduledFor!);
+      } else {
+        updates['scheduled_for'] = FieldValue.delete();
+      }
+      await _firebaseService.updateScheduledMessage(msg.id, updates);
     }
   }
 
@@ -508,6 +732,14 @@ class _ContractScreenState extends State<ContractScreen> {
   }
 
   Widget _buildPinGate(Contract contract) {
+    // Request focus exactly once — avoids the Android keyboard flicker caused by
+    // autofocus inside a StreamBuilder that rebuilds on Firestore updates.
+    if (!_pinFocusRequested) {
+      _pinFocusRequested = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pinFocusNode.requestFocus();
+      });
+    }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -532,6 +764,7 @@ class _ContractScreenState extends State<ContractScreen> {
               width: 220,
               child: TextField(
                 controller: _pinEntryCtrl,
+                focusNode: _pinFocusNode,
                 keyboardType: TextInputType.number,
                 obscureText: !_pinVisible,
                 maxLength: 8,
@@ -691,6 +924,11 @@ class _ContractScreenState extends State<ContractScreen> {
                           ),
                         ),
                       ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.swap_horiz, size: 16),
+                      label: const Text('Transfer Ownership'),
+                      onPressed: () => _transferOwnership(contract),
                     ),
                   ],
                 ),
@@ -867,7 +1105,12 @@ class _ContractScreenState extends State<ContractScreen> {
         final pending = all
             .where((m) => m.status == 'pending' && m.contractId == contract.id)
             .toList()
-          ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+          ..sort((a, b) {
+            if (a.scheduledFor == null && b.scheduledFor == null) return 0;
+            if (a.scheduledFor == null) return 1;
+            if (b.scheduledFor == null) return -1;
+            return a.scheduledFor!.compareTo(b.scheduledFor!);
+          });
 
         if (pending.isEmpty) return const SizedBox.shrink();
 
@@ -916,13 +1159,16 @@ class _ContractScreenState extends State<ContractScreen> {
 
   Widget _buildScheduledMessageRow(Contract contract, ScheduledMessage msg) {
     final typeLabel = switch (msg.type) {
-      'availability_request' => 'Availability Request',
-      'last_ditch'           => 'Last-Ditch Fill Request',
-      'sub_request'          => 'Sub Request',
-      'lineup_publish'       => 'Auto Lineup Publish',
-      _                      => 'Payment Reminder',
+      'availability_request'  => 'Availability Request',
+      'availability_reminder' => 'Availability Reminder',
+      'last_ditch'            => 'Last-Ditch Fill Request',
+      'sub_request'           => 'Sub Request',
+      'lineup_publish'        => 'Auto Lineup Publish',
+      _                       => 'Payment Reminder',
     };
-    final dateStr = DateFormat('EEE, MMM d').format(msg.scheduledFor);
+    final dateStr = msg.scheduledFor != null
+        ? DateFormat('EEE, MMM d').format(msg.scheduledFor!)
+        : 'On Hold';
     final sessionStr = msg.sessionDate != null
         ? ' — ${DateFormat('MMM d').format(msg.sessionDate!)}'
         : '';
@@ -954,13 +1200,13 @@ class _ContractScreenState extends State<ContractScreen> {
             child: const Text('Edit', style: TextStyle(fontSize: 12)),
           ),
           TextButton(
-            onPressed: () => _firebaseService.updateScheduledMessage(msg.id, {'status': 'cancelled'}),
+            onPressed: () => _firebaseService.deleteScheduledMessage(msg.id),
             style: TextButton.styleFrom(
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              foregroundColor: Colors.grey,
+              foregroundColor: Colors.red.shade400,
             ),
-            child: const Text('Skip', style: TextStyle(fontSize: 12)),
+            child: const Text('Delete', style: TextStyle(fontSize: 12)),
           ),
           TextButton(
             onPressed: () => _sendScheduledMessageNow(contract, msg),

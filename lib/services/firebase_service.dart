@@ -130,7 +130,12 @@ class FirebaseService {
         .snapshots()
         .map((snap) {
           final list = snap.docs.map(ScheduledMessage.fromFirestore).toList();
-          list.sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+          list.sort((a, b) {
+            if (a.scheduledFor == null && b.scheduledFor == null) return 0;
+            if (a.scheduledFor == null) return 1;
+            if (b.scheduledFor == null) return -1;
+            return a.scheduledFor!.compareTo(b.scheduledFor!);
+          });
           return list;
         });
   }
@@ -166,6 +171,28 @@ class FirebaseService {
 
   Future<void> updateScheduledMessage(String id, Map<String, dynamic> fields) async {
     await _db.collection('scheduled_messages').doc(id).update(fields);
+  }
+
+  Future<void> deleteScheduledMessage(String id) async {
+    await _db.collection('scheduled_messages').doc(id).delete();
+  }
+
+  Future<List<User>> searchUsers(String query) async {
+    final snap = await _db.collection('users').get();
+    final lq = query.toLowerCase();
+    return snap.docs
+        .map(User.fromFirestore)
+        .where((u) =>
+            u.displayName.toLowerCase().contains(lq) ||
+            u.email.toLowerCase().contains(lq))
+        .toList();
+  }
+
+  Future<void> transferContractOwnership(
+      String contractId, String newOrganizerUid) async {
+    await _db.collection('contracts').doc(contractId).update({
+      'organizer_id': newOrganizerUid,
+    });
   }
 
   // ── Player Contract Lookup ──────────────────────────────────────────────────

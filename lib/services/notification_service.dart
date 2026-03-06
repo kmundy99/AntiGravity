@@ -22,10 +22,13 @@ class NotificationService {
     required String subject,
     required String textBody,
     required String htmlBody,
+    String? replyToEmail,
   }) async {
     await FirebaseFirestore.instance.collection('mail').add({
       'to': email,
       'message': {'subject': subject, 'text': textBody, 'html': htmlBody},
+      if (replyToEmail != null && replyToEmail.isNotEmpty)
+        'reply_to': replyToEmail,
     });
   }
 
@@ -40,6 +43,7 @@ class NotificationService {
     required String textBody,
     required String htmlBody,
     bool ignoreNotifActive = false,
+    String? replyToEmail,
   }) async {
     String? phone;
     String? email;
@@ -95,6 +99,7 @@ class NotificationService {
             subject: subject,
             textBody: textBody,
             htmlBody: htmlBody,
+            replyToEmail: replyToEmail,
           );
         }
         break;
@@ -105,6 +110,7 @@ class NotificationService {
             subject: subject,
             textBody: textBody,
             htmlBody: htmlBody,
+            replyToEmail: replyToEmail,
           );
         } else if (phone != null) {
           await _sendSms(phone: phone, textBody: textBody);
@@ -122,6 +128,7 @@ class NotificationService {
               subject: subject,
               textBody: textBody,
               htmlBody: htmlBody,
+              replyToEmail: replyToEmail,
             ),
           );
         }
@@ -138,6 +145,7 @@ class NotificationService {
             subject: subject,
             textBody: textBody,
             htmlBody: htmlBody,
+            replyToEmail: replyToEmail,
           );
         }
     }
@@ -537,6 +545,7 @@ class NotificationService {
     required String body,
     String? Function(String uid)? linkBuilder,
     bool ignoreNotifActive = true,
+    String? replyToEmail,
   }) async {
     String resolvedBody = body.replaceAll('{playerName}', recipientDisplayName);
     if (linkBuilder != null) {
@@ -553,6 +562,7 @@ class NotificationService {
         textBody: resolvedBody,
         htmlBody: htmlBody,
         ignoreNotifActive: ignoreNotifActive,
+        replyToEmail: replyToEmail,
       );
     } else {
       await _send(
@@ -561,6 +571,7 @@ class NotificationService {
         textBody: resolvedBody,
         htmlBody: '<p>${resolvedBody.replaceAll('\n', '<br/>')}</p>',
         ignoreNotifActive: ignoreNotifActive,
+        replyToEmail: replyToEmail,
       );
     }
   }

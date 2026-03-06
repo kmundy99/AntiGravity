@@ -303,8 +303,11 @@ class Contract {
   final int notifPaymentWeeksBefore; // Weeks before season start to begin payment reminders
   final int notifLineupDaysBefore; // Days before session when lineup is auto-published
   final int notifLineupTimeMinutes; // Time of day for auto-publish, in minutes from midnight
+  final int notifAvailTimeMinutes; // Time of day for availability request emails, in minutes from midnight (default 600 = 10am)
+  final int notifAvailReminderHoursBefore; // Hours before lineup auto-publish to send non-responder reminder (default 24)
   final String notificationMode; // 'auto' | 'manual'
   final List<String> rosterUids; // Denormalized for Firestore array-contains queries
+  final Map<String, Map<String, String>> emailTemplates; // Per-type subject/body overrides keyed by type string
 
   Contract({
     this.id = '',
@@ -329,8 +332,11 @@ class Contract {
     this.notifPaymentWeeksBefore = 4,
     this.notifLineupDaysBefore = 2,
     this.notifLineupTimeMinutes = 600,
+    this.notifAvailTimeMinutes = 600,
+    this.notifAvailReminderHoursBefore = 24,
     this.notificationMode = 'auto',
     this.rosterUids = const [],
+    this.emailTemplates = const {},
   });
 
   List<DateTime> get sessionDates {
@@ -400,8 +406,18 @@ class Contract {
       notifPaymentWeeksBefore: data['notif_payment_weeks_before'] ?? 4,
       notifLineupDaysBefore: data['notif_lineup_days_before'] ?? 2,
       notifLineupTimeMinutes: data['notif_lineup_time_minutes'] ?? 600,
+      notifAvailTimeMinutes: data['notif_avail_time_minutes'] ?? 600,
+      notifAvailReminderHoursBefore: data['notif_avail_reminder_hours_before'] ?? 24,
       notificationMode: data['notification_mode'] ?? 'auto',
       rosterUids: List<String>.from(data['roster_uids'] ?? []),
+      emailTemplates: () {
+        final raw = data['email_templates'] as Map<String, dynamic>?;
+        if (raw == null) return <String, Map<String, String>>{};
+        return raw.map((k, v) => MapEntry(
+          k,
+          Map<String, String>.from(v as Map<String, dynamic>? ?? {}),
+        ));
+      }(),
     );
   }
 
@@ -427,8 +443,11 @@ class Contract {
     'notif_payment_weeks_before': notifPaymentWeeksBefore,
     'notif_lineup_days_before': notifLineupDaysBefore,
     'notif_lineup_time_minutes': notifLineupTimeMinutes,
+    'notif_avail_time_minutes': notifAvailTimeMinutes,
+    'notif_avail_reminder_hours_before': notifAvailReminderHoursBefore,
     'notification_mode': notificationMode,
     'roster_uids': rosterUids,
+    if (emailTemplates.isNotEmpty) 'email_templates': emailTemplates,
   };
 }
 
@@ -510,14 +529,15 @@ class ScheduledMessage {
   final String id;
   final String contractId;
   final String organizerId;
-  final String type; // 'availability_request' | 'payment_reminder'
+  final String type; // 'availability_request' | 'availability_reminder' | 'payment_reminder' | 'lineup_publish' | etc.
   final DateTime? sessionDate; // null for payment reminders
-  final DateTime scheduledFor;
+  final DateTime? scheduledFor; // null = "on hold"; Cloud Function skips null-scheduled messages
   final String status; // 'pending' | 'sent' | 'cancelled'
   final String subject;
   final String body;
   final List<RecipientInfo> recipients;
   final String recipientsFilter; // 'all' | 'unpaid' | 'no_response'
+  final bool autoSendEnabled; // if false, Cloud Function skips auto-sending (organizer must trigger manually)
 
   ScheduledMessage({
     this.id = '',
@@ -525,12 +545,13 @@ class ScheduledMessage {
     required this.organizerId,
     required this.type,
     this.sessionDate,
-    required this.scheduledFor,
+    this.scheduledFor,
     this.status = 'pending',
     required this.subject,
     required this.body,
     required this.recipients,
     this.recipientsFilter = 'all',
+    this.autoSendEnabled = true,
   });
 
   factory ScheduledMessage.fromFirestore(DocumentSnapshot doc) {
@@ -541,7 +562,7 @@ class ScheduledMessage {
       organizerId: data['organizer_id'] ?? '',
       type: data['type'] ?? 'availability_request',
       sessionDate: (data['session_date'] as Timestamp?)?.toDate(),
-      scheduledFor: (data['scheduled_for'] as Timestamp).toDate(),
+      scheduledFor: (data['scheduled_for'] as Timestamp?)?.toDate(),
       status: data['status'] ?? 'pending',
       subject: data['subject'] ?? '',
       body: data['body'] ?? '',
@@ -549,6 +570,7 @@ class ScheduledMessage {
           ?.map((e) => RecipientInfo.fromMap(Map<String, dynamic>.from(e)))
           .toList() ?? [],
       recipientsFilter: data['recipients_filter'] ?? 'all',
+      autoSendEnabled: data['auto_send_enabled'] as bool? ?? true,
     );
   }
 
@@ -557,28 +579,36 @@ class ScheduledMessage {
     'organizer_id': organizerId,
     'type': type,
     if (sessionDate != null) 'session_date': Timestamp.fromDate(sessionDate!),
-    'scheduled_for': Timestamp.fromDate(scheduledFor),
+    if (scheduledFor != null) 'scheduled_for': Timestamp.fromDate(scheduledFor!),
     'status': status,
     'subject': subject,
     'body': body,
     'recipients': recipients.map((r) => r.toMap()).toList(),
     'recipients_filter': recipientsFilter,
+    'auto_send_enabled': autoSendEnabled,
   };
 
-  ScheduledMessage copyWith({String? status, String? subject, String? body}) =>
-      ScheduledMessage(
-        id: id,
-        contractId: contractId,
-        organizerId: organizerId,
-        type: type,
-        sessionDate: sessionDate,
-        scheduledFor: scheduledFor,
-        status: status ?? this.status,
-        subject: subject ?? this.subject,
-        body: body ?? this.body,
-        recipients: recipients,
-        recipientsFilter: recipientsFilter,
-      );
+  ScheduledMessage copyWith({
+    String? status,
+    String? subject,
+    String? body,
+    DateTime? scheduledFor,
+    bool? autoSendEnabled,
+    bool clearScheduledFor = false,
+  }) => ScheduledMessage(
+    id: id,
+    contractId: contractId,
+    organizerId: organizerId,
+    type: type,
+    sessionDate: sessionDate,
+    scheduledFor: clearScheduledFor ? null : (scheduledFor ?? this.scheduledFor),
+    status: status ?? this.status,
+    subject: subject ?? this.subject,
+    body: body ?? this.body,
+    recipients: recipients,
+    recipientsFilter: recipientsFilter,
+    autoSendEnabled: autoSendEnabled ?? this.autoSendEnabled,
+  );
 }
 
 enum RosterStatus { invited, accepted, declined, waitlisted }
@@ -587,7 +617,7 @@ enum RosterStatus { invited, accepted, declined, waitlisted }
 // MESSAGING MODELS
 // ===========================================================================
 
-enum MessageType { custom, matchInvite, contractInvite, paymentReminder, availabilityRequest, subRequest, sessionLineup, paymentConfirmation }
+enum MessageType { custom, matchInvite, contractInvite, paymentReminder, availabilityRequest, availabilityReminder, subRequest, sessionLineup, paymentConfirmation }
 
 class RecipientInfo {
   final String uid;

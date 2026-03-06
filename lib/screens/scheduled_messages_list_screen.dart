@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models.dart';
@@ -8,6 +9,7 @@ class ScheduledMessagesListScreen extends StatelessWidget {
   final Contract contract;
   final Future<void> Function(ScheduledMessage) onSendNow;
   final Future<void> Function(ScheduledMessage) onEdit;
+  final Future<void> Function(ScheduledMessage)? onDelete;
 
   const ScheduledMessagesListScreen({
     super.key,
@@ -15,6 +17,7 @@ class ScheduledMessagesListScreen extends StatelessWidget {
     required this.contract,
     required this.onSendNow,
     required this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -40,11 +43,16 @@ class ScheduledMessagesListScreen extends StatelessWidget {
               .where((m) =>
                   m.status == 'pending' ||
                   (m.status == 'sent' &&
-                      m.scheduledFor.isAfter(cutoff)) ||
+                      (m.scheduledFor?.isAfter(cutoff) ?? false)) ||
                   (m.status == 'cancelled' &&
-                      m.scheduledFor.isAfter(cutoff)))
+                      (m.scheduledFor?.isAfter(cutoff) ?? false)))
               .toList()
-            ..sort((a, b) => a.scheduledFor.compareTo(b.scheduledFor));
+            ..sort((a, b) {
+              if (a.scheduledFor == null && b.scheduledFor == null) return 0;
+              if (a.scheduledFor == null) return 1;
+              if (b.scheduledFor == null) return -1;
+              return a.scheduledFor!.compareTo(b.scheduledFor!);
+            });
 
           if (all.isEmpty) {
             return const Center(
@@ -74,8 +82,9 @@ class ScheduledMessagesListScreen extends StatelessWidget {
                       contract: contract,
                       onSendNow: () => onSendNow(msg),
                       onEdit: () => onEdit(msg),
-                      onSkip: () => firebase.updateScheduledMessage(
-                          msg.id, {'status': 'cancelled'}),
+                      onDelete: onDelete != null
+                          ? () => onDelete!(msg)
+                          : () => firebase.deleteScheduledMessage(msg.id),
                     )),
                 const SizedBox(height: 16),
               ],
@@ -89,7 +98,7 @@ class ScheduledMessagesListScreen extends StatelessWidget {
                 const SizedBox(height: 16),
               ],
               if (cancelled.isNotEmpty) ...[
-                _sectionHeader('Skipped (last 30 days)'),
+                _sectionHeader('Deleted / Cancelled (last 30 days)'),
                 ...cancelled.map((msg) => _ScheduledMsgTile(
                       msg: msg,
                       contract: contract,
@@ -120,7 +129,7 @@ class _ScheduledMsgTile extends StatelessWidget {
   final bool readonly;
   final VoidCallback? onSendNow;
   final VoidCallback? onEdit;
-  final VoidCallback? onSkip;
+  final VoidCallback? onDelete;
 
   const _ScheduledMsgTile({
     required this.msg,
@@ -128,19 +137,22 @@ class _ScheduledMsgTile extends StatelessWidget {
     this.readonly = false,
     this.onSendNow,
     this.onEdit,
-    this.onSkip,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final typeLabel = switch (msg.type) {
-      'availability_request' => 'Availability Request',
-      'last_ditch'           => 'Last-Ditch Fill Request',
-      'sub_request'          => 'Sub Request',
-      'lineup_publish'       => 'Auto Lineup Publish',
-      _                      => 'Payment Reminder',
+      'availability_request'  => 'Availability Request',
+      'availability_reminder' => 'Availability Reminder',
+      'last_ditch'            => 'Last-Ditch Fill Request',
+      'sub_request'           => 'Sub Request',
+      'lineup_publish'        => 'Auto Lineup Publish',
+      _                       => 'Payment Reminder',
     };
-    final scheduledStr = DateFormat('EEE, MMM d · h:mm a').format(msg.scheduledFor);
+    final scheduledStr = msg.scheduledFor != null
+        ? DateFormat('EEE, MMM d · h:mm a').format(msg.scheduledFor!)
+        : 'On Hold — no send date set';
     final sessionStr = msg.sessionDate != null
         ? ' — Session ${DateFormat('MMM d').format(msg.sessionDate!)}'
         : '';
@@ -152,14 +164,14 @@ class _ScheduledMsgTile extends StatelessWidget {
     String statusLabel;
     switch (msg.status) {
       case 'pending':
-        statusColor = Colors.blue;
-        statusLabel = 'Pending';
+        statusColor = msg.scheduledFor == null ? Colors.orange : Colors.blue;
+        statusLabel = msg.scheduledFor == null ? 'On Hold' : (msg.autoSendEnabled ? 'Pending' : 'Manual');
       case 'sent':
         statusColor = Colors.green;
         statusLabel = 'Sent';
       case 'cancelled':
         statusColor = Colors.grey;
-        statusLabel = 'Skipped';
+        statusLabel = 'Deleted';
       default:
         statusColor = Colors.grey;
         statusLabel = msg.status;
@@ -227,13 +239,13 @@ class _ScheduledMsgTile extends StatelessWidget {
                     child: const Text('Edit', style: TextStyle(fontSize: 12)),
                   ),
                   TextButton(
-                    onPressed: onSkip,
+                    onPressed: onDelete,
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      foregroundColor: Colors.grey,
+                      foregroundColor: Colors.red.shade400,
                     ),
-                    child: const Text('Skip', style: TextStyle(fontSize: 12)),
+                    child: const Text('Delete', style: TextStyle(fontSize: 12)),
                   ),
                   TextButton(
                     onPressed: onSendNow,

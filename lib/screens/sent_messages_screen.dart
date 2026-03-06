@@ -190,6 +190,7 @@ class _TypeChip extends StatelessWidget {
       MessageType.contractInvite => Colors.indigo,
       MessageType.paymentReminder => Colors.orange,
       MessageType.availabilityRequest => Colors.teal,
+      MessageType.availabilityReminder => Colors.teal,
       MessageType.subRequest => Colors.purple,
       MessageType.sessionLineup => Colors.indigo,
       MessageType.paymentConfirmation => Colors.green,
