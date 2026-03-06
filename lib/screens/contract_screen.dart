@@ -35,6 +35,28 @@ class _ContractScreenState extends State<ContractScreen> {
   final _firebaseService = FirebaseService();
   final Set<String> _selectedPlayerUids = {};
 
+  late Stream<Contract?> _contractStream;
+  late Stream<List<ScheduledMessage>> _messagesStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initStreams();
+  }
+
+  @override
+  void didUpdateWidget(covariant ContractScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentUserUid != widget.currentUserUid) {
+      _initStreams();
+    }
+  }
+
+  void _initStreams() {
+    _contractStream = _firebaseService.getContractByOrganizer(widget.currentUserUid);
+    _messagesStream = _firebaseService.getScheduledMessagesStream(widget.currentUserUid);
+  }
+
   // PIN gate state
   bool _pinVerified = false;
   bool _pinVisible = false;
@@ -602,7 +624,7 @@ class _ContractScreenState extends State<ContractScreen> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Contract?>(
-      stream: _firebaseService.getContractByOrganizer(widget.currentUserUid),
+      stream: _contractStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -734,9 +756,10 @@ class _ContractScreenState extends State<ContractScreen> {
   Widget _buildPinGate(Contract contract) {
     // Request focus exactly once — avoids the Android keyboard flicker caused by
     // autofocus inside a StreamBuilder that rebuilds on Firestore updates.
+    // (We also cache the streams now so this happens much less often)
     if (!_pinFocusRequested) {
       _pinFocusRequested = true;
-      Future.delayed(const Duration(milliseconds: 400), () {
+      Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) _pinFocusNode.requestFocus();
       });
     }
@@ -1102,7 +1125,7 @@ class _ContractScreenState extends State<ContractScreen> {
 
   Widget _buildScheduledMessagesCard(Contract contract) {
     return StreamBuilder<List<ScheduledMessage>>(
-      stream: _firebaseService.getScheduledMessagesStream(widget.currentUserUid),
+      stream: _messagesStream,
       builder: (context, snapshot) {
         final all = snapshot.data ?? [];
         final pending = all
