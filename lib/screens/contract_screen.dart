@@ -736,7 +736,7 @@ class _ContractScreenState extends State<ContractScreen> {
     // autofocus inside a StreamBuilder that rebuilds on Firestore updates.
     if (!_pinFocusRequested) {
       _pinFocusRequested = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) _pinFocusNode.requestFocus();
       });
     }
