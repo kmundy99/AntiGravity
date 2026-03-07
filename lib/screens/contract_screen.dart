@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:pinput/pinput.dart';
 import 'package:intl/intl.dart';
 import '../models.dart';
 import '../services/firebase_service.dart';
@@ -784,38 +785,64 @@ class _ContractScreenState extends State<ContractScreen> {
             ),
             const SizedBox(height: 24),
             SizedBox(
-              width: 220,
-              child: TextField(
+              width: 260,
+              child: Pinput(
                 controller: _pinEntryCtrl,
                 focusNode: _pinFocusNode,
-                keyboardType: TextInputType.number,
+                length: 4,
                 obscureText: !_pinVisible,
+                keyboardType: TextInputType.number,
                 autofillHints: const [],
-                enableSuggestions: false,
-                autocorrect: false,
-                maxLength: 8,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 22, letterSpacing: 6),
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  counterText: '',
-                  errorText: _pinError,
-                  suffixIcon: IconButton(
-                    icon: Icon(_pinVisible ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _pinVisible = !_pinVisible),
+                onCompleted: (_) => _checkPin(contract),
+                onSubmitted: (_) => _checkPin(contract),
+                defaultPinTheme: PinTheme(
+                  width: 50,
+                  height: 60,
+                  textStyle: const TextStyle(fontSize: 22, color: Colors.black87),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade400),
                   ),
                 ),
-                onSubmitted: (_) => _checkPin(contract),
+                focusedPinTheme: PinTheme(
+                  width: 50,
+                  height: 60,
+                  textStyle: const TextStyle(fontSize: 22, color: Colors.black87),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade600, width: 2),
+                  ),
+                ),
+                errorPinTheme: PinTheme(
+                  width: 50,
+                  height: 60,
+                  textStyle: const TextStyle(fontSize: 22, color: Colors.black87),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red, width: 2),
+                  ),
+                ),
               ),
             ),
+            if (_pinError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _pinError!,
+                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
-              width: 220,
+              width: 260,
               child: ElevatedButton(
                 onPressed: () => _checkPin(contract),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue.shade900,
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 child: const Text('Unlock'),
               ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
+import 'package:pinput/pinput.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../models.dart';
@@ -955,26 +956,65 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _pinCtrl,
-            keyboardType: TextInputType.number,
-            obscureText: !_pinVisible,
-            maxLength: 8,
-            decoration: InputDecoration(
-              labelText: 'Organizer PIN',
-              hintText: 'Optional — 4 to 8 digits',
-              prefixIcon: const Icon(Icons.lock_outline),
-              border: const OutlineInputBorder(),
-              counterText: '',
-              suffixIcon: IconButton(
-                icon: Icon(_pinVisible ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setState(() => _pinVisible = !_pinVisible),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 12.0, right: 16.0),
+                child: Icon(Icons.lock_outline, color: Colors.grey),
               ),
-            ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Pinput(
+                      controller: _pinCtrl,
+                      length: 4,
+                      obscureText: !_pinVisible,
+                      keyboardType: TextInputType.number,
+                      defaultPinTheme: PinTheme(
+                        width: 45,
+                        height: 55,
+                        textStyle: const TextStyle(fontSize: 20, color: Colors.black87),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade400),
+                        ),
+                      ),
+                      focusedPinTheme: PinTheme(
+                        width: 45,
+                        height: 55,
+                        textStyle: const TextStyle(fontSize: 20, color: Colors.black87),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade600, width: 2),
+                        ),
+                      ),
+                      validator: (s) {
+                        return (s != null && s.isNotEmpty && s.length < 4) ? 'Enter 4 digits' : null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () => setState(() => _pinVisible = !_pinVisible),
+                      icon: Icon(_pinVisible ? Icons.visibility_off : Icons.visibility, size: 16),
+                      label: Text(_pinVisible ? 'Hide PIN' : 'Show PIN', style: const TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 0),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
           const Text(
-            'If set, this PIN is required to manage the contract (confirm payments, remove players, etc.). Players are not affected.',
+            'If set, this 4-digit PIN is required to manage the contract. Players are not affected.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
 
