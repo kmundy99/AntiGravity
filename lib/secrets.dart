@@ -6,3 +6,9 @@ const String placesApiKey =
 
 const String geminiCloudFunctionUrl =
     'https://us-central1-tennis-app-mp-2026.cloudfunctions.net/askGemini'; // placeholder — update after deploying Cloud Function
+
+const String generateSessionMessagesUrl =
+    'https://generatesessionmessages-fgtfl3l7bq-uc.a.run.app';
+
+const String sendApprovedMessagesUrl =
+    'https://sendapprovedmessages-fgtfl3l7bq-uc.a.run.app';

@@ -519,12 +519,43 @@ class ContractSession {
   );
 }
 
+/// A fully-rendered per-player email stored on a ScheduledMessage in approval mode.
+class RenderedEmail {
+  final String uid;
+  final String displayName;
+  final String subject;
+  final String body;
+
+  const RenderedEmail({
+    required this.uid,
+    required this.displayName,
+    required this.subject,
+    required this.body,
+  });
+
+  factory RenderedEmail.fromMap(Map<String, dynamic> map) => RenderedEmail(
+    uid: map['uid'] ?? '',
+    displayName: map['display_name'] ?? '',
+    subject: map['subject'] ?? '',
+    body: map['body'] ?? '',
+  );
+
+  Map<String, dynamic> toMap() => {
+    'uid': uid,
+    'display_name': displayName,
+    'subject': subject,
+    'body': body,
+  };
+}
+
 /// A scheduled auto-message (availability request or payment reminder).
 /// Stored in the `scheduled_messages` Firestore collection.
 /// [recipientsFilter] is applied at send time by the Cloud Function:
 ///   'all' → send to all recipients
 ///   'unpaid' → filter to roster players where paymentStatus == 'pending'
 ///   'no_response' → filter to players who haven't responded to the session's availability request
+/// [status]: 'pending' | 'pending_approval' | 'sent' | 'cancelled'
+///   'pending_approval' → CF has generated full content in [renderedEmails]; organizer must approve to send
 class ScheduledMessage {
   final String id;
   final String contractId;
@@ -532,12 +563,14 @@ class ScheduledMessage {
   final String type; // 'availability_request' | 'availability_reminder' | 'payment_reminder' | 'lineup_publish' | etc.
   final DateTime? sessionDate; // null for payment reminders
   final DateTime? scheduledFor; // null = "on hold"; Cloud Function skips null-scheduled messages
-  final String status; // 'pending' | 'sent' | 'cancelled'
+  final String status; // 'pending' | 'pending_approval' | 'sent' | 'cancelled'
   final String subject;
   final String body;
   final List<RecipientInfo> recipients;
   final String recipientsFilter; // 'all' | 'unpaid' | 'no_response'
-  final bool autoSendEnabled; // if false, Cloud Function skips auto-sending (organizer must trigger manually)
+  final bool autoSendEnabled; // if false, CF generates drafts but never sends (organizer must approve)
+  final List<RenderedEmail> renderedEmails; // fully resolved per-player emails (set in pending_approval state)
+  final DateTime? generatedAt; // when CF generated the rendered content
 
   ScheduledMessage({
     this.id = '',
@@ -552,6 +585,8 @@ class ScheduledMessage {
     required this.recipients,
     this.recipientsFilter = 'all',
     this.autoSendEnabled = true,
+    this.renderedEmails = const [],
+    this.generatedAt,
   });
 
   factory ScheduledMessage.fromFirestore(DocumentSnapshot doc) {
@@ -571,6 +606,10 @@ class ScheduledMessage {
           .toList() ?? [],
       recipientsFilter: data['recipients_filter'] ?? 'all',
       autoSendEnabled: data['auto_send_enabled'] as bool? ?? true,
+      renderedEmails: (data['rendered_emails'] as List<dynamic>?)
+          ?.map((e) => RenderedEmail.fromMap(Map<String, dynamic>.from(e)))
+          .toList() ?? [],
+      generatedAt: (data['generated_at'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -586,6 +625,8 @@ class ScheduledMessage {
     'recipients': recipients.map((r) => r.toMap()).toList(),
     'recipients_filter': recipientsFilter,
     'auto_send_enabled': autoSendEnabled,
+    'rendered_emails': renderedEmails.map((e) => e.toMap()).toList(),
+    if (generatedAt != null) 'generated_at': Timestamp.fromDate(generatedAt!),
   };
 
   ScheduledMessage copyWith({
@@ -608,6 +649,8 @@ class ScheduledMessage {
     recipients: recipients,
     recipientsFilter: recipientsFilter,
     autoSendEnabled: autoSendEnabled ?? this.autoSendEnabled,
+    renderedEmails: renderedEmails,
+    generatedAt: generatedAt,
   );
 }
 

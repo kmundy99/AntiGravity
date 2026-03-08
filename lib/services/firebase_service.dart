@@ -155,7 +155,8 @@ class FirebaseService {
         .where('contract_id', isEqualTo: contractId)
         .get();
     for (final doc in existing.docs) {
-      if (doc.data()['status'] == 'pending') {
+      final s = doc.data()['status'];
+      if (s == 'pending' || s == 'pending_approval') {
         batch.update(doc.reference, {'status': 'cancelled'});
       }
     }
@@ -175,6 +176,32 @@ class FirebaseService {
 
   Future<void> deleteScheduledMessage(String id) async {
     await _db.collection('scheduled_messages').doc(id).delete();
+  }
+
+  /// Resets all `pending_approval` ScheduledMessage docs for a given contract + session date key
+  /// back to `pending` status, clearing rendered content. This allows regeneration.
+  Future<void> deleteApprovalDraftsForSession(String contractId, String sessionDateKey, {String? messageType}) async {
+    final snap = await _db
+        .collection('scheduled_messages')
+        .where('contract_id', isEqualTo: contractId)
+        .get();
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      if (data['status'] != 'pending_approval') continue;
+      if (messageType != null && data['type'] != messageType) continue;
+      final sd = (data['session_date'] as Timestamp?)?.toDate().toUtc();
+      if (sd == null) continue;
+      final key = '${sd.year}-${sd.month.toString().padLeft(2, '0')}-${sd.day.toString().padLeft(2, '0')}';
+      if (key == sessionDateKey) {
+        batch.update(doc.reference, {
+          'status': 'pending',
+          'rendered_emails': FieldValue.delete(),
+          'generated_at': FieldValue.delete(),
+        });
+      }
+    }
+    await batch.commit();
   }
 
   Future<List<User>> searchUsers(String query) async {

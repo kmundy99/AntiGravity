@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
-import 'package:intl/intl.dart';
 import '../models.dart';
 import '../services/firebase_service.dart';
 import '../services/notification_service.dart';
@@ -10,9 +8,9 @@ import '../utils/message_templates.dart';
 import 'compose_message_screen.dart';
 import 'contract_setup_screen.dart';
 import 'contract_session_grid_screen.dart';
-import 'scheduled_messages_list_screen.dart';
 import 'select_players_screen.dart';
 import 'sent_messages_screen.dart';
+import 'session_email_queue_screen.dart';
 
 class ContractScreen extends StatefulWidget {
   final String currentUserUid;
@@ -411,213 +409,6 @@ class _ContractScreenState extends State<ContractScreen> {
     }
   }
 
-  Future<void> _sendScheduledMessageNow(Contract contract, ScheduledMessage msg) async {
-    // Apply recipients filter at send time
-    List<RecipientInfo> recipients;
-    if (msg.recipientsFilter == 'unpaid') {
-      final unpaidUids = contract.roster
-          .where((p) => p.paymentStatus == 'pending')
-          .map((p) => p.uid)
-          .toSet();
-      recipients = msg.recipients.where((r) => unpaidUids.contains(r.uid)).toList();
-    } else {
-      recipients = msg.recipients;
-    }
-
-    // Build a per-recipient link for message types that include one
-    String? Function(String uid)? linkBuilder;
-    if (msg.type == 'availability_request' && msg.sessionDate != null) {
-      final dateKey = '${msg.sessionDate!.year}-'
-          '${msg.sessionDate!.month.toString().padLeft(2, '0')}-'
-          '${msg.sessionDate!.day.toString().padLeft(2, '0')}';
-      linkBuilder = (uid) =>
-          'https://www.finapps.com/#/availability/${msg.contractId}/$dateKey'
-          '?uid=${Uri.encodeComponent(uid)}';
-    } else if (msg.type == 'last_ditch' && msg.sessionDate != null) {
-      final dateKey = '${msg.sessionDate!.year}-'
-          '${msg.sessionDate!.month.toString().padLeft(2, '0')}-'
-          '${msg.sessionDate!.day.toString().padLeft(2, '0')}';
-      linkBuilder = (uid) =>
-          'https://www.finapps.com/#/session/${msg.contractId}/$dateKey'
-          '/subin?uid=${Uri.encodeComponent(uid)}';
-    } else if (msg.type == 'lineup_publish' && msg.sessionDate != null) {
-      final dateKey = '${msg.sessionDate!.year}-'
-          '${msg.sessionDate!.month.toString().padLeft(2, '0')}-'
-          '${msg.sessionDate!.day.toString().padLeft(2, '0')}';
-      linkBuilder = (uid) =>
-          'https://www.finapps.com/#/session/${msg.contractId}/$dateKey'
-          '/manage?uid=${Uri.encodeComponent(uid)}';
-    }
-
-    for (final r in recipients) {
-      unawaited(NotificationService.sendComposed(
-        recipientUid: r.uid,
-        recipientDisplayName: r.displayName,
-        subject: msg.subject,
-        body: msg.body,
-        linkBuilder: linkBuilder,
-        replyToEmail: widget.organizerEmail,
-      ));
-    }
-
-    if (recipients.isNotEmpty) {
-      unawaited(_firebaseService.logMessage(MessageLogEntry(
-        sentBy: widget.currentUserUid,
-        sentAt: DateTime.now(),
-        type: switch (msg.type) {
-          'availability_request' => MessageType.availabilityRequest,
-          'last_ditch'           => MessageType.subRequest,
-          'sub_request'          => MessageType.subRequest,
-          'lineup_publish'       => MessageType.sessionLineup,
-          _                      => MessageType.paymentReminder,
-        },
-        subject: msg.subject,
-        body: msg.body,
-        recipients: recipients,
-        contextType: 'contract',
-        contextId: contract.id,
-        deliveryCount: recipients.length,
-        expireAt: DateTime.now().add(const Duration(days: 90)),
-      )));
-    }
-
-    await _firebaseService.updateScheduledMessage(msg.id, {'status': 'sent'});
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sent to ${recipients.length} player(s)')),
-      );
-    }
-  }
-
-  Future<void> _editScheduledMessage(ScheduledMessage msg) async {
-    final subjectCtrl = TextEditingController(text: msg.subject);
-    final bodyCtrl = TextEditingController(text: msg.body);
-    DateTime? scheduledFor = msg.scheduledFor;
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Edit Notification'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Scheduled date/time ────────────────────────────
-                  const Text('Send date/time',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blueGrey)),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.calendar_today, size: 16),
-                          label: Text(
-                            scheduledFor != null
-                                ? DateFormat('MMM d, yyyy').format(scheduledFor!)
-                                : 'No date — on hold',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                          onPressed: () async {
-                            final d = await showDatePicker(
-                              context: ctx,
-                              initialDate: scheduledFor ?? DateTime.now(),
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime(2040),
-                            );
-                            if (d != null) {
-                              setDialogState(() {
-                                final t = scheduledFor;
-                                scheduledFor = DateTime(
-                                  d.year, d.month, d.day,
-                                  t?.hour ?? 9, t?.minute ?? 0,
-                                );
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.access_time, size: 16),
-                        label: Text(
-                          scheduledFor != null
-                              ? TimeOfDay.fromDateTime(scheduledFor!).format(ctx)
-                              : '--:--',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        onPressed: () async {
-                          final t = await showTimePicker(
-                            context: ctx,
-                            initialTime: scheduledFor != null
-                                ? TimeOfDay.fromDateTime(scheduledFor!)
-                                : const TimeOfDay(hour: 9, minute: 0),
-                          );
-                          if (t != null && scheduledFor != null) {
-                            setDialogState(() {
-                              scheduledFor = DateTime(
-                                scheduledFor!.year, scheduledFor!.month, scheduledFor!.day,
-                                t.hour, t.minute,
-                              );
-                            });
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  if (scheduledFor != null)
-                    TextButton.icon(
-                      icon: const Icon(Icons.pause_circle_outline, size: 16),
-                      label: const Text('Put on hold (clear date)', style: TextStyle(fontSize: 12)),
-                      style: TextButton.styleFrom(foregroundColor: Colors.orange),
-                      onPressed: () => setDialogState(() => scheduledFor = null),
-                    ),
-                  const SizedBox(height: 12),
-                  // ── Subject / body ─────────────────────────────────
-                  TextField(
-                    controller: subjectCtrl,
-                    decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: bodyCtrl,
-                    maxLines: 6,
-                    decoration: const InputDecoration(labelText: 'Body', border: OutlineInputBorder()),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-          ],
-        ),
-      ),
-    );
-
-    final savedSubject = subjectCtrl.text;
-    final savedBody = bodyCtrl.text;
-    subjectCtrl.dispose();
-    bodyCtrl.dispose();
-
-    if (saved == true) {
-      final updates = <String, dynamic>{
-        'subject': savedSubject,
-        'body': savedBody,
-      };
-      if (scheduledFor != null) {
-        updates['scheduled_for'] = Timestamp.fromDate(scheduledFor!);
-      } else {
-        updates['scheduled_for'] = FieldValue.delete();
-      }
-      await _firebaseService.updateScheduledMessage(msg.id, updates);
-    }
-  }
 
   String _formatCurrency(double amount) => '\$${amount.toStringAsFixed(2)}';
 
@@ -1029,7 +820,7 @@ class _ContractScreenState extends State<ContractScreen> {
 
         const SizedBox(height: 16),
 
-        // ── Upcoming Auto-Messages ────────────────────────────────
+        // ── Session Emails ────────────────────────────────────────
         _buildScheduledMessagesCard(contract),
 
         const SizedBox(height: 16),
@@ -1155,54 +946,84 @@ class _ContractScreenState extends State<ContractScreen> {
       stream: _messagesStream,
       builder: (context, snapshot) {
         final all = snapshot.data ?? [];
-        final pending = all
+
+        final approvalMsgs = all
+            .where((m) => m.status == 'pending_approval' && m.contractId == contract.id)
+            .toList();
+        final pendingMsgs = all
             .where((m) => m.status == 'pending' && m.contractId == contract.id)
-            .toList()
-          ..sort((a, b) {
-            if (a.scheduledFor == null && b.scheduledFor == null) return 0;
-            if (a.scheduledFor == null) return 1;
-            if (b.scheduledFor == null) return -1;
-            return a.scheduledFor!.compareTo(b.scheduledFor!);
-          });
+            .toList();
 
-        if (pending.isEmpty) return const SizedBox.shrink();
+        if (approvalMsgs.isEmpty && pendingMsgs.isEmpty) return const SizedBox.shrink();
 
-        final visible = pending.take(3).toList();
+        // Count unique upcoming session dates
+        final sessionDates = {...approvalMsgs, ...pendingMsgs}
+            .where((m) => m.sessionDate != null)
+            .map((m) => '${m.sessionDate!.year}-'
+                '${m.sessionDate!.month.toString().padLeft(2, '0')}-'
+                '${m.sessionDate!.day.toString().padLeft(2, '0')}')
+            .toSet();
+
+        final hasReviewReady = approvalMsgs.isNotEmpty;
 
         return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.schedule, size: 16, color: Colors.blueGrey),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Upcoming Auto-Messages (${pending.length})',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ScheduledMessagesListScreen(
-                            organizerUid: widget.currentUserUid,
-                            contract: contract,
-                            onSendNow: (msg) => _sendScheduledMessageNow(contract, msg),
-                            onEdit: _editScheduledMessage,
+          shape: hasReviewReady
+              ? RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.orange.shade300, width: 1.5),
+                )
+              : null,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SessionEmailQueueScreen(
+                  organizerUid: widget.currentUserUid,
+                  contract: contract,
+                  organizerEmail: widget.organizerEmail,
+                ),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(
+                    hasReviewReady
+                        ? Icons.mark_email_unread_outlined
+                        : Icons.email_outlined,
+                    size: 20,
+                    color: hasReviewReady ? Colors.orange.shade700 : Colors.blueGrey,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasReviewReady
+                              ? 'Session Emails — Review Required'
+                              : 'Session Emails',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: hasReviewReady ? Colors.orange.shade800 : null,
                           ),
                         ),
-                      ),
-                      child: const Text('View All'),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasReviewReady
+                              ? '${approvalMsgs.length} email group${approvalMsgs.length != 1 ? "s" : ""} ready to review and send'
+                              : '${sessionDates.length} upcoming session date${sessionDates.length != 1 ? "s" : ""} — tap to generate previews',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                const Divider(height: 8),
-                ...visible.map((msg) => _buildScheduledMessageRow(contract, msg)),
-              ],
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
+              ),
             ),
           ),
         );
@@ -1210,70 +1031,6 @@ class _ContractScreenState extends State<ContractScreen> {
     );
   }
 
-  Widget _buildScheduledMessageRow(Contract contract, ScheduledMessage msg) {
-    final typeLabel = switch (msg.type) {
-      'availability_request'  => 'Availability Request',
-      'availability_reminder' => 'Availability Reminder',
-      'last_ditch'            => 'Last-Ditch Fill Request',
-      'sub_request'           => 'Sub Request',
-      'lineup_publish'        => 'Auto Lineup Publish',
-      _                       => 'Payment Reminder',
-    };
-    final dateStr = msg.scheduledFor != null
-        ? DateFormat('EEE, MMM d').format(msg.scheduledFor!)
-        : 'On Hold';
-    final sessionStr = msg.sessionDate != null
-        ? ' — ${DateFormat('MMM d').format(msg.sessionDate!)}'
-        : '';
-    final filterLabel = msg.recipientsFilter == 'unpaid' ? 'unpaid players' : '${msg.recipients.length} players';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$typeLabel$sessionStr',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  '$dateStr · $filterLabel',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () => _editScheduledMessage(msg),
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
-            child: const Text('Edit', style: TextStyle(fontSize: 12)),
-          ),
-          TextButton(
-            onPressed: () => _firebaseService.deleteScheduledMessage(msg.id),
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              foregroundColor: Colors.red.shade400,
-            ),
-            child: const Text('Delete', style: TextStyle(fontSize: 12)),
-          ),
-          TextButton(
-            onPressed: () => _sendScheduledMessageNow(contract, msg),
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              foregroundColor: Colors.blue.shade700,
-            ),
-            child: const Text('Send Now', style: TextStyle(fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildPlayerTile(Contract contract, ContractPlayer player) {
     final confirmed = player.paymentStatus == 'confirmed';

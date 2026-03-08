@@ -7,150 +7,96 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const { CloudBillingClient } = require("@google-cloud/billing");
 const logger = require("firebase-functions/logger");
-const twilio = require("twilio");
+const { Resend } = require("resend");
 
 const firestore = require("firebase-admin/firestore");
 
 initializeApp();
 
-// =============================================================================
-// TWILIO SMS
-// =============================================================================
-
-exports.sendTwilioMessage = onDocumentCreated("messages/{messageId}", async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
-
-    let client;
-    if (accountSid && authToken) {
-        client = twilio(accountSid, authToken);
-    }
-
-    const metadata = snap.data();
-    const docRef = snap.ref;
-    const { to, body } = metadata;
-
-    if (!to || !body) {
-        console.error("Missing 'to' or 'body' in message doc.");
-        return;
-    }
-
-    if (!client) {
-        console.error("Twilio client not initialized. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN from your .env file.");
-        await snap.ref.update({
-            "delivery.state": "ERROR",
-            "delivery.error": "Twilio client not configured"
-        });
-        return;
-    }
-
-    try {
-        const message = await client.messages.create({
-            body: body,
-            from: twilioNumber,
-            to: to,
-        });
-
-        await docRef.update({
-            'delivery.state': 'SUCCESS',
-            'delivery.info': `SMS sent with SID: ${message.sid}`,
-            'delivery.startTime': firestore.FieldValue.serverTimestamp(),
-            'delivery.endTime': firestore.FieldValue.serverTimestamp(),
-        });
-
-        logger.log(`SMS successfully sent to ${to}. SID: ${message.sid}`);
-    } catch (error) {
-        logger.error(`Error sending SMS to ${to}:`, error);
-
-        // Update document with error state
-        await docRef.update({
-            'delivery.state': 'ERROR',
-            'delivery.error': error.message,
-            'delivery.startTime': firestore.FieldValue.serverTimestamp(),
-            'delivery.endTime': firestore.FieldValue.serverTimestamp(),
-        });
-    }
-});
+const resendApiKey = defineSecret("RESEND_API_KEY");
 
 // =============================================================================
-// SENDGRID EMAIL
+// EMAIL (RESEND)
 // =============================================================================
 
-exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
-    // Initialize SendGrid lazily inside the function execution
-    const sgMail = require('@sendgrid/mail');
-    const sgApiKey = process.env.SENDGRID_API_KEY;
-    if (sgApiKey) {
-        sgMail.setApiKey(sgApiKey);
-    } else {
-        logger.error('SENDGRID_API_KEY environment variable is not set!');
-    }
+exports.sendEmail = onDocumentCreated(
+    {
+        document: "mail/{docId}",
+        secrets: [resendApiKey],
+    },
+    async (event) => {
+        // Initialize Resend lazily inside the function execution
+        const resend = new Resend(resendApiKey.value());
 
-    const snapshot = event.data;
-    if (!snapshot) {
-        logger.error("No data associated with the event.");
-        return;
-    }
+        const snapshot = event.data;
+        if (!snapshot) {
+            logger.error("No data associated with the event.");
+            return;
+        }
 
-    const data = snapshot.data();
-    const docRef = snapshot.ref;
+        const data = snapshot.data();
+        const docRef = snapshot.ref;
 
-    // Check if it's already been processed
-    if (data.delivery && (data.delivery.state === 'SUCCESS' || data.delivery.state === 'ERROR')) {
-        logger.log("Email document already processed. Skipping.");
-        return;
-    }
+        // Check if it's already been processed
+        if (data.delivery && (data.delivery.state === 'SUCCESS' || data.delivery.state === 'ERROR')) {
+            logger.log("Email document already processed. Skipping.");
+            return;
+        }
 
-    const to = data.to;
-    const message = data.message;
+        const to = data.to;
+        const message = data.message;
 
-    if (!to || !message || !message.subject || (!message.html && !message.text)) {
-        logger.error("Document is missing required properties ('to' and 'message' containing 'subject' and at least one of 'text' or 'html').");
-        await docRef.update({
-            'delivery.state': 'ERROR',
-            'delivery.error': "Missing required properties.",
-            'delivery.startTime': firestore.FieldValue.serverTimestamp(),
-            'delivery.endTime': firestore.FieldValue.serverTimestamp(),
-        });
-        return;
-    }
+        if (!to || !message || !message.subject || (!message.html && !message.text)) {
+            logger.error("Document is missing required properties ('to' and 'message' containing 'subject' and at least one of 'text' or 'html').");
+            await docRef.update({
+                'delivery.state': 'ERROR',
+                'delivery.error': "Missing required properties.",
+                'delivery.startTime': firestore.FieldValue.serverTimestamp(),
+                'delivery.endTime': firestore.FieldValue.serverTimestamp(),
+            });
+            return;
+        }
 
-    try {
-        const msg = {
-            to: to,
-            from: 'bookings@finapps.com',
-            subject: message.subject,
-            text: message.text,
-            html: message.html,
-            ...(data.reply_to ? { replyTo: data.reply_to } : {}),
-        };
+        try {
+            const msg = {
+                to: typeof to === 'string' ? [to] : to,
+                from: `${data.from_name || 'Adhoc Local'} <tennis@contact.finapps.com>`,
+                subject: message.subject,
+                ...(message.text ? { text: message.text } : {}),
+                ...(message.html ? { html: message.html } : {}),
+                ...(data.reply_to ? { reply_to: data.reply_to } : {}),
+            };
 
-        await sgMail.send(msg);
+            const response = await resend.emails.send(msg);
 
-        // Update document with success state
-        await docRef.update({
-            'delivery.state': 'SUCCESS',
-            'delivery.startTime': firestore.FieldValue.serverTimestamp(),
-            'delivery.endTime': firestore.FieldValue.serverTimestamp(),
-        });
+            if (response.error) {
+                logger.error("Resend API returned an error object:", JSON.stringify(response.error));
+                throw new Error(`Resend API Error: ${response.error.message} (${response.error.name}) - ${response.error.statusCode}`);
+            }
 
-        logger.log(`Email successfully sent to ${to}.`);
-    } catch (error) {
-        logger.error(`Error sending Email to ${to}:`, error);
+            const resendData = response.data;
 
-        // Update document with error state
-        await docRef.update({
-            'delivery.state': 'ERROR',
-            'delivery.error': error.message,
-            'delivery.startTime': firestore.FieldValue.serverTimestamp(),
-            'delivery.endTime': firestore.FieldValue.serverTimestamp(),
-        });
-    }
-});
+            // Update document with success state
+            await docRef.update({
+                'delivery.state': 'SUCCESS',
+                'delivery.info': `Email sent with ID: ${resendData?.id}`,
+                'delivery.startTime': firestore.FieldValue.serverTimestamp(),
+                'delivery.endTime': firestore.FieldValue.serverTimestamp(),
+            });
+
+            logger.log(`Email successfully sent to ${to}.`);
+        } catch (error) {
+            logger.error(`Error sending Email to ${to}:`, error);
+
+            // Update document with error state
+            await docRef.update({
+                'delivery.state': 'ERROR',
+                'delivery.error': error.message,
+                'delivery.startTime': firestore.FieldValue.serverTimestamp(),
+                'delivery.endTime': firestore.FieldValue.serverTimestamp(),
+            });
+        }
+    });
 
 // =============================================================================
 // GEMINI AI — called by the feedback assistant in the app
@@ -223,6 +169,13 @@ exports.askGemini = onRequest(
 // =============================================================================
 
 /**
+ * Formats a Date as YYYY-MM-DD.
+ */
+function formatDateKey(date) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
  * Looks up a user's notification preferences and routes the message to
  * the appropriate Firestore queue (messages/ for SMS, mail/ for email).
  */
@@ -280,6 +233,123 @@ async function sendToUser(db, uid, subject, textBody, replyToEmail = null) {
     await Promise.all(sends);
 }
 
+/**
+ * Computes fully-rendered per-player emails for a scheduled message.
+ * Returns { renderedEmails, assignment?, confirmedPlayers?, spotsNeeded?, dateKey?, sessionRef? }
+ * or { skip: true } if the message should be cancelled.
+ */
+async function generateMessageContent(db, msg, roster, contractData) {
+    // Apply recipients_filter
+    let recipients = msg.recipients || [];
+    if (msg.recipients_filter === "unpaid") {
+        const unpaidUids = new Set(
+            roster.filter(p => p.payment_status === "pending").map(p => p.uid)
+        );
+        recipients = recipients.filter(r => unpaidUids.has(r.uid));
+    } else if (msg.recipients_filter === "no_response" && msg.session_date) {
+        const dateKey = formatDateKey(msg.session_date.toDate());
+        const sessionDoc = await db.collection("contracts").doc(msg.contract_id)
+            .collection("sessions").doc(dateKey).get();
+        const availability = sessionDoc.exists ? (sessionDoc.data().availability || {}) : {};
+        recipients = recipients.filter(r => !availability[r.uid]);
+    }
+
+    // lineup_publish: run slot assignment algorithm and build per-player emails
+    if (msg.type === "lineup_publish" && msg.session_date) {
+        const sd = msg.session_date.toDate();
+        const dateKey = formatDateKey(sd);
+        const sessionRef = db.collection("contracts").doc(msg.contract_id)
+            .collection("sessions").doc(dateKey);
+        const sessionSnap = await sessionRef.get();
+
+        if (sessionSnap.exists && sessionSnap.data().assignment_state === "published") {
+            return { skip: true };
+        }
+
+        const availability = sessionSnap.exists ? (sessionSnap.data().availability ?? {}) : {};
+        const spotsPerSession = (contractData.courts_count ?? 1) * 4;
+
+        // Mirror of SlotAssignmentScreen._autoAssign
+        const sorted = [...roster].sort((a, b) => {
+            const pctA = (a.paid_slots ?? 0) > 0 ? (a.played_slots ?? 0) / a.paid_slots : 0;
+            const pctB = (b.paid_slots ?? 0) > 0 ? (b.played_slots ?? 0) / b.paid_slots : 0;
+            const cmp = pctA - pctB;
+            return cmp !== 0 ? cmp : (a.display_name || "").localeCompare(b.display_name || "");
+        });
+
+        const assignment = {};
+        let confirmedCount = 0;
+        for (const player of sorted) {
+            const avail = availability[player.uid];
+            if (avail === "available" && confirmedCount < spotsPerSession) {
+                assignment[player.uid] = "confirmed";
+                confirmedCount++;
+            } else if (avail === "available" || avail === "backup") {
+                assignment[player.uid] = "reserve";
+            } else {
+                assignment[player.uid] = "out";
+            }
+        }
+
+        const confirmedPlayers = roster.filter(p => assignment[p.uid] === "confirmed");
+        const reservePlayers = roster.filter(p => assignment[p.uid] === "reserve");
+        const confirmedNames = confirmedPlayers.map(p => p.display_name || p.uid).join(", ") || "(none yet)";
+        const reserveSection = reservePlayers.length > 0
+            ? `\n\nReserves: ${reservePlayers.map(p => p.display_name || p.uid).join(", ")}`
+            : "";
+
+        const subjectLineup = "Lineup published for your tennis session";
+        const groupBody = `Hi all,\n\nThe lineup for ${dateKey} has been set.\n\nConfirmed: ${confirmedNames}${reserveSection}`;
+        const renderedEmails = [{
+            uid: "_group_",
+            display_name: `All ${roster.length} players`,
+            subject: subjectLineup,
+            body: groupBody,
+        }];
+
+        return {
+            renderedEmails,
+            assignment,
+            confirmedPlayers,
+            reservePlayers,
+            confirmedCount,
+            spotsPerSession,
+            dateKey,
+            spotsNeeded: Math.max(0, spotsPerSession - confirmedCount),
+            sessionRef,
+        };
+    }
+
+    // last_ditch: cancel if spot already filled
+    let linkTemplate = null;
+    if (msg.type === "last_ditch" && msg.session_date) {
+        const sd = msg.session_date.toDate();
+        const dateKey = formatDateKey(sd);
+        const sessionSnap = await db.collection("contracts").doc(msg.contract_id)
+            .collection("sessions").doc(dateKey).get();
+        if (sessionSnap.exists) {
+            const assignment = sessionSnap.data().assignment ?? {};
+            const confirmedCount = Object.values(assignment).filter(s => s === "confirmed").length;
+            const spotsPerSession = (contractData.courts_count ?? 1) * 4;
+            if (confirmedCount >= spotsPerSession) return { skip: true };
+        }
+        linkTemplate = (uid) =>
+            `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
+    } else if ((msg.type === "availability_request" || msg.type === "availability_reminder") && msg.session_date) {
+        const dateKey = formatDateKey(msg.session_date.toDate());
+        linkTemplate = (uid) =>
+            `https://www.finapps.com/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
+    }
+
+    const renderedEmails = recipients.map(r => {
+        let body = (msg.body || "").replace("{playerName}", r.display_name || r.uid);
+        if (linkTemplate) body = body.replace("{link}", linkTemplate(r.uid));
+        return { uid: r.uid, display_name: r.display_name || r.uid, subject: msg.subject, body };
+    });
+
+    return { renderedEmails };
+}
+
 exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
     const db = getFirestore();
     const now = firestore.Timestamp.now();
@@ -293,211 +363,130 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
 
     for (const doc of pending.docs) {
         const msg = doc.data();
-
         try {
-            // Skip if organizer disabled auto-send (message stays pending for manual dispatch)
-            if (msg.auto_send_enabled === false) continue;
-
-            // Look up organizer email for reply-to on all outbound emails
             let organizerEmail = null;
             try {
                 const orgDoc = await db.collection("users").doc(msg.organizer_id).get();
                 if (orgDoc.exists) organizerEmail = orgDoc.data().email || null;
-            } catch (_) {}
+            } catch (_) { }
 
-            // Fetch current contract roster for filter evaluation
             const contractDoc = await db.collection("contracts").doc(msg.contract_id).get();
-            const roster = contractDoc.exists ? (contractDoc.data().roster || []) : [];
+            const contractData = contractDoc.exists ? contractDoc.data() : {};
+            const roster = contractData.roster || [];
 
-            let recipients = msg.recipients || [];
-
-            // Apply recipients_filter at send time
-            if (msg.recipients_filter === "unpaid") {
-                const unpaidUids = new Set(
-                    roster.filter(p => p.payment_status === "pending").map(p => p.uid)
-                );
-                recipients = recipients.filter(r => unpaidUids.has(r.uid));
-            } else if (msg.recipients_filter === "no_response" && msg.session_date) {
-                const sessionDate = msg.session_date.toDate();
-                const dateKey = `${sessionDate.getFullYear()}-` +
-                    `${String(sessionDate.getMonth() + 1).padStart(2, "0")}-` +
-                    `${String(sessionDate.getDate()).padStart(2, "0")}`;
-                const sessionDoc = await db.collection("contracts").doc(msg.contract_id)
-                    .collection("sessions").doc(dateKey).get();
-                const availability = sessionDoc.exists ? (sessionDoc.data().availability || {}) : {};
-                recipients = recipients.filter(r => !availability[r.uid]);
-            }
-
-            // If lineup_publish: run slot assignment algorithm and publish
-            if (msg.type === "lineup_publish" && msg.session_date) {
-                const sd = msg.session_date.toDate();
-                const dateKey = `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,"0")}-${String(sd.getDate()).padStart(2,"0")}`;
-                const sessionRef = db.collection("contracts").doc(msg.contract_id)
-                    .collection("sessions").doc(dateKey);
-                const sessionSnap = await sessionRef.get();
-
-                // If already published, skip
-                if (sessionSnap.exists && sessionSnap.data().assignment_state === "published") {
-                    await doc.ref.update({ status: "cancelled" });
+            // If pending_approval drafts already exist for this session date, skip or adopt
+            if (msg.session_date) {
+                const dateKey = formatDateKey(msg.session_date.toDate());
+                const existingDrafts = await db.collection("scheduled_messages")
+                    .where("contract_id", "==", msg.contract_id)
+                    .where("status", "==", "pending_approval")
+                    .get();
+                const hasDraft = existingDrafts.docs.some(d => {
+                    const sd = d.data().session_date?.toDate();
+                    return sd && formatDateKey(sd) === dateKey && d.id !== doc.id;
+                });
+                if (hasDraft) {
+                    // Auto mode: absorb this pending doc into the approval queue
+                    if (msg.auto_send_enabled !== false) {
+                        await doc.ref.update({ status: "pending_approval", generated_at: now });
+                    }
+                    // Approval mode: skip — organizer already generated a draft for this date
                     continue;
                 }
+            }
 
-                const availability = sessionSnap.exists ? (sessionSnap.data().availability ?? {}) : {};
-                const spotsPerSession = ((contractDoc.data() ?? {}).courts_count ?? 1) * 4;
+            const result = await generateMessageContent(db, msg, roster, contractData);
+            if (!result || result.skip) {
+                await doc.ref.update({ status: "cancelled" });
+                continue;
+            }
 
-                // Run slot assignment algorithm (mirror of SlotAssignmentScreen._autoAssign)
-                const sorted = [...roster].sort((a, b) => {
-                    const pctA = (a.paid_slots ?? 0) > 0 ? (a.played_slots ?? 0) / a.paid_slots : 0;
-                    const pctB = (b.paid_slots ?? 0) > 0 ? (b.played_slots ?? 0) / b.paid_slots : 0;
-                    const cmp = pctA - pctB;
-                    return cmp !== 0 ? cmp : (a.display_name || "").localeCompare(b.display_name || "");
-                });
-
-                const assignment = {};
-                let confirmedCount = 0;
-                for (const player of sorted) {
-                    const avail = availability[player.uid];
-                    if (avail === "available" && confirmedCount < spotsPerSession) {
-                        assignment[player.uid] = "confirmed";
-                        confirmedCount++;
-                    } else if (avail === "available" || avail === "backup") {
-                        assignment[player.uid] = "reserve";
-                    } else {
-                        assignment[player.uid] = "out";
-                    }
+            // Approval mode: store draft, do not send
+            if (msg.auto_send_enabled === false) {
+                if (msg.type === "lineup_publish" && result.sessionRef && result.assignment) {
+                    await result.sessionRef.set({
+                        id: formatDateKey(msg.session_date.toDate()),
+                        date: msg.session_date,
+                        assignment: result.assignment,
+                        assignment_state: "draft",
+                    }, { merge: true });
                 }
+                await doc.ref.update({
+                    status: "pending_approval",
+                    rendered_emails: result.renderedEmails,
+                    generated_at: now,
+                });
+                continue;
+            }
 
-                // Write assignment to session doc
+            // Auto mode: send immediately
+            const { renderedEmails } = result;
+
+            if (msg.type === "lineup_publish" && result.sessionRef && result.assignment) {
+                const { assignment, confirmedPlayers, spotsNeeded, dateKey, sessionRef } = result;
+
                 await sessionRef.set({
                     id: dateKey,
                     date: msg.session_date,
-                    assignment: assignment,
+                    assignment,
                     assignment_state: "published",
                 }, { merge: true });
 
-                // Send lineup emails to confirmed players
-                const confirmedPlayers = roster.filter(p => assignment[p.uid] === "confirmed");
-                const subjectLineup = "Lineup published for your tennis session";
-                const sendPromises = confirmedPlayers.map(r => {
-                    const manageLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/manage?uid=${encodeURIComponent(r.uid)}`;
-                    const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has been set. To manage your spot: ${manageLink}`;
-                    return sendToUser(db, r.uid, subjectLineup, body, organizerEmail);
-                });
-                await Promise.all(sendPromises);
+                await Promise.all(renderedEmails.map(r =>
+                    sendToUser(db, r.uid, r.subject, r.body, organizerEmail)
+                ));
 
-                // If lineup is underfilled, notify non-confirmed players and schedule a last-ditch
-                if (confirmedCount < spotsPerSession) {
-                    const spotsNeeded = spotsPerSession - confirmedCount;
+                if (spotsNeeded > 0) {
                     const outPlayers = roster.filter(p => assignment[p.uid] !== "confirmed");
                     if (outPlayers.length > 0) {
                         const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${dateKey}`;
-                        const subSendPromises = outPlayers.map(r => {
+                        await Promise.all(outPlayers.map(r => {
                             const subLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
                             const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
                             return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
-                        });
-                        await Promise.all(subSendPromises);
+                        }));
                         await db.collection("message_log").add({
-                            sent_by: msg.organizer_id,
-                            sent_at: firestore.Timestamp.now(),
-                            type: "sub_request",
-                            subject: subjectSub,
-                            body: "Sub request for underfilled lineup",
+                            sent_by: msg.organizer_id, sent_at: now, type: "sub_request",
+                            subject: subjectSub, body: "Sub request for underfilled lineup",
                             recipients: outPlayers.map(p => ({ uid: p.uid, display_name: p.display_name })),
-                            context_type: "contract",
-                            context_id: msg.contract_id,
+                            context_type: "contract", context_id: msg.contract_id,
                             delivery_count: outPlayers.length,
-                            expire_at: firestore.Timestamp.fromMillis(firestore.Timestamp.now().toMillis() + 90 * 24 * 3600 * 1000),
+                            expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
                         });
-                        // Schedule last-ditch 2 hours later
                         await db.collection("scheduled_messages").add({
-                            organizer_id: msg.organizer_id,
-                            contract_id: msg.contract_id,
-                            type: "last_ditch",
-                            session_date: msg.session_date,
-                            scheduled_for: firestore.Timestamp.fromMillis(firestore.Timestamp.now().toMillis() + 2 * 3600 * 1000),
+                            organizer_id: msg.organizer_id, contract_id: msg.contract_id,
+                            type: "last_ditch", session_date: msg.session_date,
+                            scheduled_for: firestore.Timestamp.fromMillis(now.toMillis() + 2 * 3600 * 1000),
                             status: "pending",
                             subject: "Still looking for players — can you help?",
                             body: `Hi {playerName}, we still need ${spotsNeeded} more player${spotsNeeded > 1 ? "s" : ""} for the ${dateKey} session. Claim the spot: {link}`,
                             recipients: roster.map(p => ({ uid: p.uid, display_name: p.display_name })),
-                            recipients_filter: "all",
-                            auto_send_enabled: true,
+                            recipients_filter: "all", auto_send_enabled: true,
                         });
                     }
                 }
 
-                const now2 = firestore.Timestamp.now();
                 await db.collection("message_log").add({
-                    sent_by: msg.organizer_id,
-                    sent_at: now2,
-                    type: "session_lineup",
-                    subject: subjectLineup,
-                    body: "Auto-publish lineup notification",
+                    sent_by: msg.organizer_id, sent_at: now, type: "session_lineup",
+                    subject: "Lineup published for your tennis session",
+                    body: renderedEmails.length > 0 ? renderedEmails[0].body : "Lineup notification",
                     recipients: confirmedPlayers.map(p => ({ uid: p.uid, display_name: p.display_name })),
-                    context_type: "contract",
-                    context_id: msg.contract_id,
+                    context_type: "contract", context_id: msg.contract_id,
                     delivery_count: confirmedPlayers.length,
-                    expire_at: firestore.Timestamp.fromMillis(now2.toMillis() + 90 * 24 * 3600 * 1000),
+                    expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
                 });
 
-                await doc.ref.update({ status: "sent", sent_at: now2 });
-                continue; // skip generic send below
-            }
-
-            // If last_ditch: cancel if spot already filled; otherwise set subin link
-            let linkTemplate = null;
-            if (msg.type === "last_ditch" && msg.session_date) {
-                const sd = msg.session_date.toDate();
-                const dateKey = `${sd.getFullYear()}-` +
-                    `${String(sd.getMonth() + 1).padStart(2, "0")}-` +
-                    `${String(sd.getDate()).padStart(2, "0")}`;
-                const sessionSnap = await db.collection("contracts").doc(msg.contract_id)
-                    .collection("sessions").doc(dateKey).get();
-                if (sessionSnap.exists) {
-                    const assignment = sessionSnap.data().assignment ?? {};
-                    const confirmedCount = Object.values(assignment).filter(s => s === "confirmed").length;
-                    const spotsPerSession = ((contractDoc.data() ?? {}).courts_count ?? 1) * 4;
-                    if (confirmedCount >= spotsPerSession) {
-                        await doc.ref.update({ status: "cancelled" });
-                        continue;
-                    }
-                }
-                linkTemplate = (uid) =>
-                    `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
-            }
-
-            if (recipients.length > 0) {
-                // Build link template for availability_request
-                if (msg.type === "availability_request" && msg.session_date) {
-                    const sd = msg.session_date.toDate();
-                    const dateKey = `${sd.getFullYear()}-` +
-                        `${String(sd.getMonth() + 1).padStart(2, "0")}-` +
-                        `${String(sd.getDate()).padStart(2, "0")}`;
-                    linkTemplate = (uid) =>
-                        `https://www.finapps.com/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
-                }
-
-                const sendPromises = recipients.map(r => {
-                    let body = (msg.body || "")
-                        .replace("{playerName}", r.display_name || r.uid);
-                    if (linkTemplate) {
-                        body = body.replace("{link}", linkTemplate(r.uid));
-                    }
-                    return sendToUser(db, r.uid, msg.subject, body, organizerEmail);
-                });
-                await Promise.all(sendPromises);
-
-                // Log to message_log
+            } else if (renderedEmails.length > 0) {
+                await Promise.all(renderedEmails.map(r =>
+                    sendToUser(db, r.uid, r.subject, r.body, organizerEmail)
+                ));
                 await db.collection("message_log").add({
-                    sent_by: msg.organizer_id,
-                    sent_at: now,
-                    type: msg.type,
+                    sent_by: msg.organizer_id, sent_at: now, type: msg.type,
                     subject: msg.subject,
-                    body: msg.body,
-                    recipients: recipients,
-                    context_type: "contract",
-                    context_id: msg.contract_id,
-                    delivery_count: recipients.length,
+                    body: renderedEmails[0].body,
+                    recipients: renderedEmails.map(r => ({ uid: r.uid, display_name: r.display_name })),
+                    context_type: "contract", context_id: msg.contract_id,
+                    delivery_count: renderedEmails.length,
                     expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
                 });
             }
@@ -510,6 +499,235 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
 });
 
 // =============================================================================
+// GENERATE SESSION MESSAGES — on-demand generation (trial run / pre-deadline)
+// =============================================================================
+
+exports.generateSessionMessages = onRequest({ cors: true }, async (req, res) => {
+    res.set("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+
+    const { contractId, sessionDate, messageType } = req.body;
+    if (!contractId || !sessionDate) {
+        res.status(400).json({ error: "contractId and sessionDate are required" }); return;
+    }
+
+    const db = getFirestore();
+    const now = firestore.Timestamp.now();
+
+    const contractDoc = await db.collection("contracts").doc(contractId).get();
+    if (!contractDoc.exists) { res.status(404).json({ error: "Contract not found" }); return; }
+    const contractData = contractDoc.data();
+    const roster = contractData.roster || [];
+
+    // Fetch all scheduled_messages for this contract
+    const allSnap = await db.collection("scheduled_messages")
+        .where("contract_id", "==", contractId).get();
+
+    // Collect pending and pending_approval docs for this date (both are valid source docs)
+    const sourceDocs = [];
+    const allKeys = [];
+    for (const doc of allSnap.docs) {
+        const d = doc.data();
+        if (!d.session_date) continue;
+        const key = formatDateKey(d.session_date.toDate());
+        allKeys.push(`${key}(${d.status})`);
+        if (key !== sessionDate) continue;
+        if (d.status === "pending" || d.status === "pending_approval") {
+            if (!messageType || d.type === messageType) sourceDocs.push(doc);
+        }
+    }
+    logger.info(`generateSessionMessages: contract=${contractId} requested=${sessionDate} allDocs=[${allKeys.join(",")}] found=${sourceDocs.length}`);
+    const pendingDocs = sourceDocs; // alias kept for code below
+
+    // Reset session assignment_state from 'draft' back to 'none' (will be recomputed below)
+    const sessionRef = db.collection("contracts").doc(contractId)
+        .collection("sessions").doc(sessionDate);
+    const sessionSnap = await sessionRef.get();
+    if (sessionSnap.exists && sessionSnap.data().assignment_state === "draft") {
+        await sessionRef.update({ assignment_state: "none" });
+    }
+
+    if (pendingDocs.length === 0) {
+        res.status(404).json({ error: `No scheduled messages found for ${sessionDate}. Keys found: ${allKeys.join(", ")}` }); return;
+    }
+
+    const updateBatch = db.batch();
+    let generatedCount = 0;
+    for (const doc of pendingDocs) {
+        const msg = doc.data();
+        const result = await generateMessageContent(db, msg, roster, contractData);
+        // On-demand generation: skip silently (don't cancel) so the doc stays for future runs
+        if (!result || result.skip) continue;
+        if (msg.type === "lineup_publish" && result.assignment) {
+            await sessionRef.set({
+                id: sessionDate, date: msg.session_date,
+                assignment: result.assignment, assignment_state: "draft",
+            }, { merge: true });
+        }
+        updateBatch.update(doc.ref, {
+            status: "pending_approval",
+            rendered_emails: result.renderedEmails,
+            generated_at: now,
+        });
+        generatedCount++;
+    }
+    await updateBatch.commit();
+
+    res.status(200).json({ success: true, count: generatedCount });
+});
+
+// =============================================================================
+// SEND APPROVED MESSAGES — sends stored rendered_emails for a session date
+// =============================================================================
+
+exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
+    res.set("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+
+    const { contractId, sessionDate, messageType } = req.body;
+    if (!contractId || !sessionDate) {
+        res.status(400).json({ error: "contractId and sessionDate are required" }); return;
+    }
+
+    const db = getFirestore();
+    const now = firestore.Timestamp.now();
+
+    const contractDoc = await db.collection("contracts").doc(contractId).get();
+    if (!contractDoc.exists) { res.status(404).json({ error: "Contract not found" }); return; }
+    const contractData = contractDoc.data();
+    const roster = contractData.roster || [];
+
+    let organizerEmail = null;
+    try {
+        const orgDoc = await db.collection("users").doc(contractData.organizer_id).get();
+        if (orgDoc.exists) organizerEmail = orgDoc.data().email || null;
+    } catch (_) { }
+
+    const approvalSnap = await db.collection("scheduled_messages")
+        .where("contract_id", "==", contractId)
+        .where("status", "==", "pending_approval").get();
+
+    const sessionDocs = approvalSnap.docs.filter(d => {
+        const sd = d.data().session_date?.toDate();
+        return sd && formatDateKey(sd) === sessionDate
+            && (!messageType || d.data().type === messageType);
+    });
+
+    if (sessionDocs.length === 0) {
+        res.status(404).json({ error: "No pending_approval messages found for this session date" }); return;
+    }
+
+    let sentCount = 0;
+    for (const doc of sessionDocs) {
+        const msg = doc.data();
+        const renderedEmails = msg.rendered_emails || [];
+        try {
+            if (msg.type === "lineup_publish") {
+                const sessionRef = db.collection("contracts").doc(contractId)
+                    .collection("sessions").doc(sessionDate);
+                const snap = await sessionRef.get();
+                const assignment = snap.exists ? (snap.data().assignment ?? {}) : {};
+                const spotsPerSession = (contractData.courts_count ?? 1) * 4;
+                const confirmedPlayers = roster.filter(p => assignment[p.uid] === "confirmed");
+                const confirmedCount = confirmedPlayers.length;
+
+                await sessionRef.update({ assignment_state: "published" });
+                const r = renderedEmails[0];
+                if (r) {
+                    const emailLookups = await Promise.all(roster.map(async p => {
+                        try {
+                            const userDoc = await db.collection("users").doc(p.uid).get();
+                            if (!userDoc.exists) return null;
+                            const data = userDoc.data();
+                            if (data.notif_active === false) return null;
+                            const email = data.email ||
+                                (data.primary_contact?.includes?.("@") ? data.primary_contact : null);
+                            return email || null;
+                        } catch (_) { return null; }
+                    }));
+                    const toAddresses = emailLookups.filter(Boolean);
+                    if (toAddresses.length > 0) {
+                        const htmlBody = `<p>${r.body.replace(/\n/g, "<br/>")}</p>`;
+                        await db.collection("mail").add({
+                            to: toAddresses,
+                            message: { subject: r.subject, text: r.body, html: htmlBody },
+                            ...(organizerEmail ? { reply_to: organizerEmail } : {}),
+                        });
+                        sentCount += toAddresses.length;
+                    }
+                }
+
+                if (confirmedCount < spotsPerSession) {
+                    const spotsNeeded = spotsPerSession - confirmedCount;
+                    const outPlayers = roster.filter(p => assignment[p.uid] !== "confirmed");
+                    if (outPlayers.length > 0) {
+                        const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${sessionDate}`;
+                        await Promise.all(outPlayers.map(r => {
+                            const subLink = `https://www.finapps.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const body = `Hi ${r.display_name || r.uid}, the lineup for ${sessionDate} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
+                            return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
+                        }));
+                        await db.collection("message_log").add({
+                            sent_by: contractData.organizer_id, sent_at: now, type: "sub_request",
+                            subject: subjectSub, body: "Sub request for underfilled lineup",
+                            recipients: outPlayers.map(p => ({ uid: p.uid, display_name: p.display_name })),
+                            context_type: "contract", context_id: contractId,
+                            delivery_count: outPlayers.length,
+                            expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
+                        });
+                        await db.collection("scheduled_messages").add({
+                            organizer_id: contractData.organizer_id, contract_id: contractId,
+                            type: "last_ditch", session_date: msg.session_date,
+                            scheduled_for: firestore.Timestamp.fromMillis(now.toMillis() + 2 * 3600 * 1000),
+                            status: "pending",
+                            subject: "Still looking for players — can you help?",
+                            body: `Hi {playerName}, we still need ${spotsNeeded} more player${spotsNeeded > 1 ? "s" : ""} for the ${sessionDate} session. Claim the spot: {link}`,
+                            recipients: roster.map(p => ({ uid: p.uid, display_name: p.display_name })),
+                            recipients_filter: "all",
+                            auto_send_enabled: contractData.notification_mode !== "manual",
+                        });
+                    }
+                }
+                await db.collection("message_log").add({
+                    sent_by: contractData.organizer_id, sent_at: now, type: "session_lineup",
+                    subject: "Lineup published for your tennis session",
+                    body: renderedEmails.length > 0 ? renderedEmails[0].body : "Lineup notification",
+                    recipients: confirmedPlayers.map(p => ({ uid: p.uid, display_name: p.display_name })),
+                    context_type: "contract", context_id: contractId,
+                    delivery_count: confirmedPlayers.length,
+                    expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
+                });
+
+            } else if (renderedEmails.length > 0) {
+                await Promise.all(renderedEmails.map(r =>
+                    sendToUser(db, r.uid, r.subject, r.body, organizerEmail)
+                ));
+                sentCount += renderedEmails.length;
+                await db.collection("message_log").add({
+                    sent_by: contractData.organizer_id, sent_at: now, type: msg.type,
+                    subject: msg.subject, body: renderedEmails[0].body,
+                    recipients: renderedEmails.map(r => ({ uid: r.uid, display_name: r.display_name })),
+                    context_type: "contract", context_id: contractId,
+                    delivery_count: renderedEmails.length,
+                    expire_at: firestore.Timestamp.fromMillis(now.toMillis() + 90 * 24 * 3600 * 1000),
+                });
+            }
+
+            await doc.ref.update({ status: "sent", sent_at: now });
+        } catch (e) {
+            logger.error(`sendApprovedMessages: failed to send doc ${doc.id}`, e);
+        }
+    }
+    res.status(200).json({ success: true, count: sentCount });
+});
+
+// =============================================================================
 // DROPOUT CASCADE — fires when a session's assignment map changes
 // =============================================================================
 
@@ -517,11 +735,11 @@ exports.onSessionAssignmentChange = onDocumentUpdated(
     "contracts/{contractId}/sessions/{sessionDate}",
     async (event) => {
         const before = event.data.before.data() ?? {};
-        const after  = event.data.after.data()  ?? {};
+        const after = event.data.after.data() ?? {};
         const { contractId, sessionDate } = event.params;
 
         const beforeAssign = before.assignment ?? {};
-        const afterAssign  = after.assignment  ?? {};
+        const afterAssign = after.assignment ?? {};
 
         const allUids = new Set([...Object.keys(beforeAssign), ...Object.keys(afterAssign)]);
         const changed = [...allUids].filter(u => beforeAssign[u] !== afterAssign[u]);

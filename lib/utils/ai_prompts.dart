@@ -167,5 +167,220 @@ A: Your profile is permanently removed, you're removed from all match rosters, a
 
 Q: The app says "We've hit our email limit." What does that mean?
 A: The app uses a third-party email service with a monthly sending cap. If the limit is reached, email notifications pause until the next billing cycle. You can still use the app and Match Chat normally.
+
+═══════════════════════════════════════════════════════════════
+PLAYER AVAILABILITY SETTINGS
+═══════════════════════════════════════════════════════════════
+
+Players can tell the app when they are generally available to play each week. This helps organizers see at a glance who is likely free for a given match time.
+
+SETTING YOUR WEEKLY AVAILABILITY:
+- Tap the gear icon (⚙️) to open your profile settings.
+- Find the "Weekly Availability" section.
+- For each day of the week (Monday through Sunday), choose which time periods you are generally free:
+  • Morning — 5am to 12pm
+  • Afternoon — 12pm to 5pm
+  • Evening — 5pm to 11pm
+- You can select multiple periods per day, or leave a day blank if you are never available that day.
+- Tap Save to store your preferences.
+
+SETTING AWAY BLOCKS:
+- In the same profile settings area, you can add "Away" date ranges for times you know you will be unavailable (e.g. holidays, travel).
+- Tap "Add Away Period," choose a start and end date, and optionally add a reason (e.g. "Vacation").
+- During an away block, you will show as unavailable for all matches regardless of your weekly settings.
+- You can add multiple away blocks and delete them individually.
+
+HOW IT AFFECTS YOUR VISIBILITY:
+- When an organizer creates a match, the app checks your weekly availability and any away blocks to place you in the correct group (Available, Away, or Unknown).
+- "Unknown" means you haven't set availability for that day/time — it does not mean you're unavailable.
+- Your availability settings are only used as a guide for organizers; you can still be invited to or join any match.
+
+═══════════════════════════════════════════════════════════════
+PLAYER SUGGESTIONS WHEN CREATING A MATCH
+═══════════════════════════════════════════════════════════════
+
+When you tap a time slot on the calendar to create a new match, a player suggestion panel appears alongside the match form. It shows all registered players grouped by their likely availability for that exact date and time.
+
+THREE GROUPS:
+- Available (shown first) — players whose weekly availability includes that day/time period and who have no away block covering that date.
+- Away — players who have explicitly marked that date as an away block.
+- Unknown — players who have not set weekly availability for that day/time, so their status can't be determined.
+
+FILTERING THE LIST:
+- Minimum NTRP Level — use the dropdown to show only players at or above a certain skill level.
+- Circle — filter to show only players you have assigned to Circle 1, 2, or 3.
+
+ADDING PLAYERS FROM THE PANEL:
+- Tap any player's name in the suggestion panel to add them directly to the match invite list.
+- Players already added are indicated so you don't add them twice.
+
+NOTE: The suggestions are a convenience — you can still invite any player from the full directory regardless of their availability status.
+
+═══════════════════════════════════════════════════════════════
+CONTRACTS (SEASONAL COURT BOOKINGS)
+═══════════════════════════════════════════════════════════════
+
+The Contracts tab (fourth tab, tennis-court icon) is for organizers who run a recurring weekly session on a booked court — for example, a Saturday morning group that plays every week for a full season. Contracts automate availability tracking, lineup assignment, and email notifications for each session.
+
+─────────────────────────────────────────
+SETTING UP A CONTRACT
+─────────────────────────────────────────
+
+Tap "New Contract" to open the setup form. Fill in:
+
+COURT DETAILS:
+- Club name and address
+- Which courts are booked (e.g. Court 1, Court 2) and the total number of courts
+- Day of the week the session runs (e.g. Sunday)
+- Start and end times (e.g. 12:00pm – 2:00pm)
+
+SEASON DATES:
+- Season start and end dates — the app automatically generates one session per week on your chosen weekday between those dates.
+- Holiday dates — any dates to skip (no session that week).
+
+PRICING:
+- Total season cost (what the organizer pays for all courts for the full season)
+- Price per slot (cost per individual player per session) — the app can calculate this automatically based on courts and sessions.
+- Payment instructions — free-text shown to players explaining how to pay.
+
+NOTIFICATION TIMING:
+- Availability request: how many days before each session to email players asking if they can make it (default: 7 days).
+- Availability reminder: how many hours before the lineup is published to send a reminder to players who haven't responded (default: 24 hours).
+- Lineup publish: how many days before the session to publish the lineup (default: 2 days), and what time of day.
+- Payment reminders: how many weeks before the season starts to begin sending weekly payment reminders to players who haven't paid (default: 4 weeks).
+
+NOTIFICATION MODE:
+- Auto — the app sends each email automatically at the scheduled time.
+- Manual — the app prepares draft emails for each session but the organizer must review and send them from the Email Queue screen.
+
+ORGANIZER PIN:
+- Optional 4-digit PIN that protects the contract management screen from accidental changes.
+
+STATUS:
+- Draft — contract is saved but no emails are scheduled yet.
+- Active — emails are scheduled and (in Auto mode) will send automatically. Switching a contract to Active triggers the creation of all scheduled messages.
+
+─────────────────────────────────────────
+MANAGING THE ROSTER
+─────────────────────────────────────────
+
+The roster is the list of players enrolled in the contract for the season.
+
+ADDING PLAYERS:
+- Tap "Add Players" to search the player directory and add members to the roster.
+- For each player you can set: paid slots (how many court slots per session they have committed to), payment status (pending / confirmed), and notes.
+
+PAID SLOTS:
+- A player with 1 paid slot is guaranteed a spot each session (subject to availability).
+- Players who paid for half a season (or a shared slot) have a lower slot count.
+- Slot counts feed into the fairness algorithm for lineup assignment.
+
+PAYMENT STATUS:
+- Mark a player as "Confirmed" once they have paid. This stops payment reminder emails going to them.
+
+REMOVING PLAYERS:
+- Tap a player's name in the roster → remove them from the contract. They will no longer receive session emails.
+
+TRANSFER OWNERSHIP:
+- The organizer can transfer contract ownership to another roster member using the "Transfer" option.
+
+─────────────────────────────────────────
+SESSIONS AND AVAILABILITY
+─────────────────────────────────────────
+
+Each weekly date in the season is a "session." Tap a session date in the contract view to see its details.
+
+AVAILABILITY RESPONSES:
+- Before each session, players receive an Availability Request email with a personal link.
+- Clicking the link takes them directly to the response screen (no login required) where they tap one of three options:
+  • I'm Available — they can play and want a spot.
+  • Available as Backup — they can play if needed to fill a spot.
+  • Can't Make It — they are unavailable for this session.
+- Responses are stored per session and shown in the session detail view.
+
+SESSION GRID:
+- The contract screen shows a grid of all sessions and all roster players.
+- Each cell shows that player's response for that session (available, backup, unavailable, or blank if not yet responded).
+
+─────────────────────────────────────────
+SLOT ASSIGNMENT (LINEUP)
+─────────────────────────────────────────
+
+Once availability responses are in, the organizer assigns who plays, who is on reserve, and who is out.
+
+AUTO-ASSIGN:
+- Tap "Auto Assign" and the app fills the lineup automatically using a fairness algorithm:
+  1. Players are ranked by how often they have already played relative to their paid slots (those who have played least recently get priority).
+  2. Players who marked "Available" are confirmed first (up to the court capacity — 4 players per court).
+  3. Remaining "Available" and "Backup" players are placed on Reserve.
+  4. Players who marked "Can't Make It" or did not respond are marked Out.
+
+MANUAL OVERRIDE:
+- After auto-assign (or instead of it), the organizer can tap any player in the lineup to manually change their status between Confirmed, Reserve, and Out.
+
+PUBLISH LINEUP:
+- When satisfied, tap "Publish Lineup." This locks in the assignment and triggers the Lineup email to all roster members.
+
+─────────────────────────────────────────
+EMAIL QUEUE
+─────────────────────────────────────────
+
+Tap "Session Emails" on the contract screen to open the Email Queue. This is where all scheduled emails are managed. (In Manual notification mode, the organizer controls every send from here.)
+
+THE QUEUE IS GROUPED BY SESSION DATE. For each upcoming session there are three separate message rows:
+
+1. AVAILABILITY REQUEST
+   - Sent to all players asking them to respond with their availability for that session.
+   - Each player receives their own individual email with a personal link to the response screen.
+
+2. AVAILABILITY REMINDER
+   - Sent only to players who have not yet responded, shortly before the lineup is published.
+   - Also individual per-player with a personal response link.
+
+3. LINEUP
+   - Announces who is Confirmed, who is Reserve, and who is Out for that session.
+   - Sent as a single group email to all roster members — everyone can see each other and reply to the thread.
+
+FOR EACH MESSAGE ROW:
+- Generate Preview — the app renders the actual email content (with real player names, dates, and links) so you can check it before sending. This does not send anything.
+- Review — opens a dialog showing the email subject and body as players will receive it.
+- Send — sends the email(s) immediately.
+- Regenerate — re-renders the preview (useful if the roster or session details changed).
+- Delete — discards the preview and returns the message to "upcoming" status so it can be regenerated later.
+
+IN AUTO MODE: emails send themselves at the scheduled time and you don't need to use the Email Queue unless you want to send something early or review what went out.
+
+IN MANUAL MODE: nothing sends until you tap Send in the Email Queue. Use Generate Preview → Review → Send for each message type at the appropriate time.
+
+─────────────────────────────────────────
+PAYMENT REMINDERS
+─────────────────────────────────────────
+
+- Payment reminder emails are sent automatically (or queued for manual send) on a weekly schedule starting several weeks before the season begins.
+- Only players whose payment status is still "Pending" receive these reminders.
+- Once you mark a player as "Confirmed" (paid), they stop receiving reminders.
+- Payment reminders are not tied to individual sessions and do not appear in the per-session Email Queue.
+
+─────────────────────────────────────────
+CONTRACT FAQ
+─────────────────────────────────────────
+
+Q: Can players see the full roster and lineup?
+A: Yes — when the lineup is published, the group email shows all confirmed players and reserves so everyone knows who is playing.
+
+Q: What happens if fewer players than court spots are available?
+A: The lineup is published with whoever is confirmed. The app will also automatically send individual "sub needed" emails to non-confirmed players so they can claim an open spot.
+
+Q: Can a player respond to availability without logging in?
+A: Yes. The availability email contains a personal link that takes them straight to the response screen without needing to enter their email or password.
+
+Q: What is the difference between Auto and Manual notification mode?
+A: In Auto mode the app sends each email at its scheduled time without any action from the organizer. In Manual mode the organizer must go to the Email Queue, generate a preview, and tap Send for each message before anything is delivered.
+
+Q: Can I change the email content?
+A: Yes. In the contract setup screen there is an "Email Templates" section where you can customize the subject and body for each message type. Default templates are provided but can be overridden.
+
+Q: What does "Draft" vs "Active" contract status mean?
+A: A Draft contract is saved but no emails are scheduled. Switching to Active creates all the scheduled messages for the season. Switching back to Draft cancels pending messages.
 """;
 }
