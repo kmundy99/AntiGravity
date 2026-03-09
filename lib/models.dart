@@ -43,6 +43,7 @@ class User {
   final List<BlackoutPeriod> blackouts;
   final String? createdByUid; // UID of the user who created this provisional account
   final Timestamp? lastLoginAt;
+  final bool isAdmin;
 
   User({
     this.uid = '',
@@ -63,6 +64,7 @@ class User {
     this.blackouts = const [],
     this.createdByUid,
     this.lastLoginAt,
+    this.isAdmin = false,
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
@@ -112,6 +114,7 @@ class User {
               )
               .toList() ??
           [],
+      isAdmin: data['isAdmin'] ?? data['is_admin'] ?? false,
     );
   }
 
@@ -132,6 +135,7 @@ class User {
       if (activatedAt != null) 'activated_at': activatedAt,
       if (weeklyAvailability.isNotEmpty) 'weekly_availability': weeklyAvailability,
       'blackouts': blackouts.map((b) => b.toMap()).toList(),
+      if (isAdmin) 'isAdmin': isAdmin,
     };
   }
 }

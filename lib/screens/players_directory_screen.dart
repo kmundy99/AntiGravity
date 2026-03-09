@@ -6,6 +6,7 @@ import '../models.dart';
 import '../widgets/add_custom_player_button.dart';
 import '../utils/player_sort.dart';
 import 'compose_message_screen.dart';
+import 'general_email_queue_screen.dart';
 
 class PlayersDirectoryScreen extends StatefulWidget {
   final String currentUserUid;
@@ -288,6 +289,19 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                         ),
                       ),
                     ),
+                    if (currentUser.isAdmin) ...[
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.mark_email_unread_outlined, size: 16),
+                        label: const Text("Generate & Preview Emails"),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(40),
+                          backgroundColor: Colors.orange.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => _generateAvailabilityRequests(currentUser),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -295,6 +309,58 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
         );
       },
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // GENERATE AVAILABILITY REQUESTS
+  // ---------------------------------------------------------------------------
+  Future<void> _generateAvailabilityRequests(User currentUser) async {
+    if (_selectedPlayers.isEmpty) return;
+
+    final renderedEmails = <RenderedEmail>[];
+    for (final uid in _selectedPlayers) {
+      final name = _selectedPlayerNames[uid] ?? 'Player';
+      renderedEmails.add(RenderedEmail(
+        uid: uid,
+        displayName: name,
+        subject: "Please Update Your Tennis Availability",
+        body: "Hi $name,\n\nPlease take a moment to update your general weekly availability for upcoming tennis matches. It takes less than 10 seconds and requires no login.\n\nClick the link below to set your availability:\nhttps://www.finapps.com/#/availability-setup?uid=$uid\n\nThanks!",
+      ));
+    }
+
+    final msg = ScheduledMessage(
+      contractId: 'general',
+      organizerId: currentUser.uid,
+      type: 'general_availability_request',
+      status: 'pending_approval',
+      subject: "Please Update Your Tennis Availability",
+      body: "Hi {name},\n...",
+      recipients: _selectedPlayers.map((uid) => RecipientInfo(uid: uid, displayName: _selectedPlayerNames[uid] ?? '')).toList(),
+      renderedEmails: renderedEmails,
+      generatedAt: DateTime.now(),
+    );
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    await FirebaseFirestore.instance.collection('scheduled_messages').add(msg.toFirestore());
+
+    if (mounted) {
+      Navigator.pop(context); // close dialog
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GeneralEmailQueueScreen(
+            adminUid: currentUser.uid,
+            adminEmail: currentUser.email,
+          ),
+        ),
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

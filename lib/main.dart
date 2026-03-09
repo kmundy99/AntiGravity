@@ -17,6 +17,7 @@ import 'screens/contract_availability_response_screen.dart';
 import 'screens/contract_session_player_screen.dart';
 import 'screens/complete_profile_screen.dart';
 import 'screens/contract_sub_in_screen.dart';
+import 'screens/availability_setup_screen.dart';
 import 'services/firebase_service.dart';
 
 import 'screens/match_chat_screen.dart';
@@ -25,6 +26,7 @@ import 'utils/email_error_checker.dart';
 import 'utils/calendar_export.dart';
 import 'utils/availability_utils.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
+import 'widgets/weekly_availability_matrix.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,6 +81,14 @@ class TennisApp extends StatelessWidget {
               sessionDate: sessionDate,
               playerUid: uid,
             ),
+          );
+        }
+        if (settings.name != null &&
+            settings.name!.startsWith('/availability-setup')) {
+          final uri = Uri.parse(settings.name!);
+          final uid = uri.queryParameters['uid'] ?? '';
+          return MaterialPageRoute(
+            builder: (_) => AvailabilitySetupScreen(playerUid: uid),
           );
         }
         if (settings.name != null && settings.name!.startsWith('/contract/')) {
@@ -199,11 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<List<Contract>>? _playerContractsSub;
   final List<StreamSubscription<dynamic>> _contractSessionSubs = [];
 
-  static const _avDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-  static const _avDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  static const _avPeriods = ['morning', 'afternoon', 'evening'];
-  static const _avPeriodLabels = ['Morn', 'Aft', 'Eve'];
-  static const _avPeriodTimeLabels = ['5am–Noon', 'Noon–5pm', '5pm–11pm'];
+
 
   @override
   void initState() {
@@ -380,33 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _myUid = storedUid;
             _user = user;
-            _nameCtrl.text = _user?.displayName ?? "";
-            _addressCtrl.text = _user?.address ?? "";
-            _emailCtrl.text = _user?.email ?? "";
-            _phoneFormCtrl.text = _user?.phoneNumber ?? "";
-            _gender =
-                ['Male', 'Female', 'Non-Binary', 'Other'].contains(user.gender)
-                ? user.gender
-                : 'Other';
-            _ntrp = [0.0, 3.0, 3.5, 4.0, 4.5, 5.0].contains(user.ntrpLevel)
-                ? user.ntrpLevel
-                : 3.5;
-            _notifOn = _user?.notifActive ?? true;
-            _notifMode = ['SMS', 'Email', 'Both'].contains(user.notifMode)
-                ? user.notifMode
-                : 'SMS';
-            _weeklyAvailability = Map<String, List<String>>.from(
-              user.weeklyAvailability.map(
-                (k, v) => MapEntry(k, List<String>.from(v)),
-              ),
-            );
-            // Default to all slots checked if the user has never set availability
-            if (_weeklyAvailability.isEmpty) {
-              _weeklyAvailability = {
-                for (final day in _avDays) day: List<String>.from(_avPeriods),
-              };
-            }
-            _blackouts = List<BlackoutPeriod>.from(user.blackouts);
+            _resetProfileFormState();
             _isEditingProfile =
                 user.accountStatus == AccountStatus.provisional &&
                 user.displayName.isEmpty &&
@@ -477,6 +457,37 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     }
+  }
+
+  void _resetProfileFormState() {
+    if (_user == null) return;
+    _nameCtrl.text = _user!.displayName;
+    _addressCtrl.text = _user!.address;
+    _emailCtrl.text = _user!.email;
+    _phoneFormCtrl.text = _user!.phoneNumber;
+    _gender = ['Male', 'Female', 'Non-Binary', 'Other'].contains(_user!.gender)
+        ? _user!.gender
+        : 'Other';
+    _ntrp = [0.0, 3.0, 3.5, 4.0, 4.5, 5.0].contains(_user!.ntrpLevel)
+        ? _user!.ntrpLevel
+        : 3.5;
+    _notifOn = _user!.notifActive;
+    _notifMode = ['SMS', 'Email', 'Both'].contains(_user!.notifMode)
+        ? _user!.notifMode
+        : 'SMS';
+    _weeklyAvailability = Map<String, List<String>>.from(
+      _user!.weeklyAvailability.map(
+        (k, v) => MapEntry(k, List<String>.from(v)),
+      ),
+    );
+    if (_weeklyAvailability.isEmpty) {
+      const avDaysLocal = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      const avPeriodsLocal = ['morning', 'afternoon', 'evening'];
+      _weeklyAvailability = {
+        for (final day in avDaysLocal) day: List<String>.from(avPeriodsLocal),
+      };
+    }
+    _blackouts = List<BlackoutPeriod>.from(_user!.blackouts);
   }
 
   void _saveProfile() async {
@@ -575,6 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_user?.accountStatus == AccountStatus.provisional)
             ElevatedButton(
               onPressed: () => setState(() {
+                _resetProfileFormState();
                 _isQuickSetup = false;
                 _isEditingProfile = true;
               }),
@@ -586,7 +598,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () => setState(() => _isEditingProfile = true),
+            onPressed: () {
+              setState(() {
+                _resetProfileFormState();
+                _isEditingProfile = true;
+              });
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -671,6 +688,7 @@ class _HomeScreenState extends State<HomeScreen> {
           currentUserUid: _myUid ?? '',
           onEditProfile: () {
             setState(() {
+              _resetProfileFormState();
               _selectedIndex = 0;
               _isEditingProfile = true;
             });
@@ -2362,91 +2380,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 const SizedBox(height: 10),
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(1.2),
-                    1: FlexColumnWidth(1),
-                    2: FlexColumnWidth(1),
-                    3: FlexColumnWidth(1),
+                WeeklyAvailabilityMatrix(
+                  initialAvailability: _weeklyAvailability,
+                  onAvailabilityChanged: (newAvail) {
+                     setState(() {
+                         _weeklyAvailability = newAvail;
+                     });
                   },
-                  children: [
-                    TableRow(
-                      children: [
-                        const SizedBox.shrink(),
-                        ...List.generate(
-                          _avPeriodLabels.length,
-                          (i) => Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _avPeriodLabels[i],
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  _avPeriodTimeLabels[i],
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.black54,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    for (int di = 0; di < _avDays.length; di++)
-                      TableRow(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(
-                              _avDayLabels[di],
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ),
-                          for (final period in _avPeriods)
-                            Center(
-                              child: Transform.scale(
-                                scale: 0.75,
-                                child: FilterChip(
-                                  label: const SizedBox.shrink(),
-                                  padding: EdgeInsets.zero,
-                                  selected:
-                                      _weeklyAvailability[_avDays[di]]
-                                          ?.contains(period) ??
-                                      false,
-                                  onSelected: (selected) {
-                                    setState(() {
-                                      final day = _avDays[di];
-                                      final periods =
-                                          _weeklyAvailability[day] ?? [];
-                                      if (selected) {
-                                        _weeklyAvailability[day] = [
-                                          ...periods,
-                                          period,
-                                        ];
-                                      } else {
-                                        _weeklyAvailability[day] = periods
-                                            .where((p) => p != period)
-                                            .toList();
-                                        if (_weeklyAvailability[day]!.isEmpty) {
-                                          _weeklyAvailability.remove(day);
-                                        }
-                                      }
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                  ],
                 ),
                 const SizedBox(height: 16),
                 const Text(

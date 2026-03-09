@@ -177,11 +177,12 @@ Players can tell the app when they are generally available to play each week. Th
 SETTING YOUR WEEKLY AVAILABILITY:
 - Tap the gear icon (⚙️) to open your profile settings.
 - Find the "Weekly Availability" section.
-- For each day of the week (Monday through Sunday), choose which time periods you are generally free:
-  • Morning — 5am to 12pm
-  • Afternoon — 12pm to 5pm
-  • Evening — 5pm to 11pm
-- You can select multiple periods per day, or leave a day blank if you are never available that day.
+- You will see a grid with days of the week on the left and time periods across the top:
+  • Morn (5am to Noon)
+  • Aft (Noon to 5pm)
+  • Eve (5pm to 11pm)
+- Tap the checkmarks in the grid to toggle your availability. 
+- You can also tap the checkbox next to a specific day to select/deselect the entire day, or the checkbox under a time period column to select/deselect that period for the whole week.
 - Tap Save to store your preferences.
 
 SETTING AWAY BLOCKS:
