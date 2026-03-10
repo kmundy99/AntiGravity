@@ -66,9 +66,16 @@ class _ContractAvailabilityResponseScreenState
           Map<String, String>.from(existing.availability)
             ..[widget.playerUid] = response;
 
+      final updatedAttendance = 
+          Map<String, String>.from(existing.attendance)
+            ..[widget.playerUid] = response;
+
       await _firebase.upsertSession(
         widget.contractId,
-        existing.copyWith(availability: updatedAvailability),
+        existing.copyWith(
+          availability: updatedAvailability,
+          attendance: updatedAttendance,
+        ),
       );
 
       if (mounted) {

@@ -123,14 +123,14 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     }
 
     // Keep playedSlots in sync
-    final wasPlayed  = currentState == 'played';
-    final willBePlayed = newState == 'played';
+    final wasPlayed  = currentState == 'played' || currentState == 'charged';
+    final willBePlayed = newState == 'played' || newState == 'charged';
     if (wasPlayed != willBePlayed) {
-      final delta = willBePlayed ? 1 : -1;
-      final updatedRoster = widget.contract.roster.map((p) {
+        final delta = willBePlayed ? 1 : -1;
+        final updatedRoster = widget.contract.roster.map((p) {
         if (p.uid != uid) return p;
         return p.copyWith(playedSlots: (p.playedSlots + delta).clamp(0, p.paidSlots * 2));
-      }).toList();
+        }).toList();
       await _firebase.updateContract(widget.contract.id, {
         'roster': updatedRoster.map((p) => p.toMap()).toList(),
       });
@@ -155,7 +155,8 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
 
   /// Numeric order for sorting players by their attendance state in a session.
   int _attendanceOrder(String? state) => switch (state) {
-    'played'  => 0,
+    'available' => 0,
+    'played'  => 0, // Legacy support
     'reserve' => 1,
     'charged' => 2,
     'out'     => 3,
@@ -172,13 +173,35 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   ];
 
   int _playedCount(String uid, List<ContractSession> sessions) => sessions
-      .where((s) => s.attendance[uid] == 'played')
+      .where((s) => s.attendance[uid] == 'played' || s.attendance[uid] == 'charged')
       .length;
+
+  List<String>? _cachedSortOrder;
+  String? _lastSortCol;
+  bool _lastSortAsc = true;
+  int _lastRosterLen = -1;
 
   /// Sort players according to the active sort column.
   /// Default (no column selected): ascending by Played % with name tiebreaker.
   List<ContractPlayer> _sortedRoster(List<ContractSession> sessions) {
+    if (_quickFillMode && _frozenRoster != null) return _frozenRoster!;
+
     final roster = List<ContractPlayer>.from(widget.contract.roster);
+
+    // Use cached sort order to prevent reordering jumpiness on cell edits
+    if (_cachedSortOrder != null &&
+        _lastSortCol == _sortColumn &&
+        _lastSortAsc == _sortAscending &&
+        _lastRosterLen == roster.length) {
+      final orderMap = { for (int i=0; i<_cachedSortOrder!.length; i++) _cachedSortOrder![i]: i };
+      roster.sort((a,b) => (orderMap[a.uid] ?? 999).compareTo(orderMap[b.uid] ?? 999));
+      return roster;
+    }
+
+    _lastSortCol = _sortColumn;
+    _lastSortAsc = _sortAscending;
+    _lastRosterLen = roster.length;
+
     roster.sort((a, b) {
       int result;
       final col = _sortColumn;
@@ -217,6 +240,8 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       if (result == 0) result = a.displayName.compareTo(b.displayName);
       return _sortAscending ? result : -result;
     });
+
+    _cachedSortOrder = roster.map((p) => p.uid).toList();
     return roster;
   }
 
@@ -241,7 +266,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       context: context,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy + _rowHeight, pos.dx + _sessionColWidth, pos.dy + _rowHeight * 2),
       items: [
-        const PopupMenuItem(value: 'played', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Played')])),
+        const PopupMenuItem(value: 'available', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Available')])),
         const PopupMenuItem(value: 'reserve', child: Row(children: [_ColorDot(Colors.amber), SizedBox(width: 8), Text('Reserve')])),
         const PopupMenuItem(value: 'out', child: Row(children: [_ColorDot(Colors.grey), SizedBox(width: 8), Text('Out')])),
         const PopupMenuItem(value: 'charged', child: Row(children: [_ColorDot(Colors.red), SizedBox(width: 8), Text('Charged')])),
@@ -1039,7 +1064,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
             (s) => s.id == key,
             orElse: () => ContractSession(id: key, date: d, attendance: {}),
           );
-          final pCount = session.attendance.values.where((v) => v == 'played').length;
+          final pCount = session.attendance.values.where((v) => v == 'available' || v == 'played').length;
           final Color countColor;
           if (pCount == 0) {
             countColor = Colors.grey.shade400;
@@ -1081,6 +1106,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   // ── State helpers ──────────────────────────────────────────────────
 
   Color? _stateColor(String? state) => switch (state) {
+    'available' => Colors.green.shade100,
     'played' => Colors.green.shade100,
     'reserve' => Colors.amber.shade100,
     'out' => Colors.grey.shade200,
@@ -1089,7 +1115,8 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   };
 
   String? _stateLabel(String? state) => switch (state) {
-    'played' => 'P',
+    'available' => 'A',
+    'played' => 'P', // Legacy
     'reserve' => 'R',
     'out' => 'O',
     'charged' => '\$',
@@ -1097,6 +1124,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   };
 
   Color _stateLabelColor(String? state) => switch (state) {
+    'available' => Colors.green.shade800,
     'played' => Colors.green.shade800,
     'reserve' => Colors.amber.shade800,
     'out' => Colors.grey.shade600,

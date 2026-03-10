@@ -48,8 +48,14 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
     final roster = List<ContractPlayer>.from(widget.contract.roster);
 
     roster.sort((a, b) {
-      final pctA = a.paidSlots > 0 ? a.playedSlots / a.paidSlots : 0.0;
-      final pctB = b.paidSlots > 0 ? b.playedSlots / b.paidSlots : 0.0;
+      final aOldAtten = widget.session.attendance[a.uid];
+      final aPlayedBefore = (aOldAtten == 'played' || aOldAtten == 'charged') ? (a.playedSlots - 1).clamp(0, 999) : a.playedSlots;
+      final pctA = a.paidSlots > 0 ? aPlayedBefore / a.paidSlots : 0.0;
+
+      final bOldAtten = widget.session.attendance[b.uid];
+      final bPlayedBefore = (bOldAtten == 'played' || bOldAtten == 'charged') ? (b.playedSlots - 1).clamp(0, 999) : b.playedSlots;
+      final pctB = b.paidSlots > 0 ? bPlayedBefore / b.paidSlots : 0.0;
+
       final cmp = pctA.compareTo(pctB);
       return cmp != 0 ? cmp : a.displayName.compareTo(b.displayName);
     });
@@ -59,10 +65,15 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
 
     for (final player in roster) {
       final avail = widget.session.availability[player.uid];
-      if (avail == 'available' && confirmedCount < spots) {
+      final atten = widget.session.attendance[player.uid];
+
+      final isAvail = avail == 'available' || avail == 'played' || atten == 'available' || atten == 'played' || atten == 'reserve';
+      final isBackup = avail == 'backup' || atten == 'backup';
+
+      if (isAvail && confirmedCount < spots) {
         result[player.uid] = 'confirmed';
         confirmedCount++;
-      } else if (avail == 'available' || avail == 'backup') {
+      } else if (isAvail || isBackup) {
         result[player.uid] = 'reserve';
       } else {
         result[player.uid] = 'out';
@@ -111,8 +122,38 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
       sessionAssignment: assignmentSnapshot,
       postSendAction: () async {
         final updatedAttendance = Map<String, String>.from(session.attendance);
+        final updatedRoster = List<ContractPlayer>.from(contract.roster);
+        bool rosterChanged = false;
+
         for (final e in assignmentSnapshot.entries) {
-          if (e.value == 'confirmed') updatedAttendance[e.key] = 'played';
+          final oldAtten = session.attendance[e.key];
+          if (e.value == 'confirmed') {
+            updatedAttendance[e.key] = 'played';
+            if (oldAtten != 'played' && oldAtten != 'charged') {
+              final idx = updatedRoster.indexWhere((p) => p.uid == e.key);
+              if (idx != -1) {
+                updatedRoster[idx] = updatedRoster[idx].copyWith(playedSlots: updatedRoster[idx].playedSlots + 1);
+                rosterChanged = true;
+              }
+            }
+          } else if (e.value == 'reserve') {
+            updatedAttendance[e.key] = 'reserve';
+            if (oldAtten == 'played' || oldAtten == 'charged') {
+              final idx = updatedRoster.indexWhere((p) => p.uid == e.key);
+              if (idx != -1) {
+                updatedRoster[idx] = updatedRoster[idx].copyWith(playedSlots: (updatedRoster[idx].playedSlots - 1).clamp(0, 999));
+                rosterChanged = true;
+              }
+            }
+          } else {
+            if (oldAtten == 'played' || oldAtten == 'charged') {
+              final idx = updatedRoster.indexWhere((p) => p.uid == e.key);
+              if (idx != -1) {
+                updatedRoster[idx] = updatedRoster[idx].copyWith(playedSlots: (updatedRoster[idx].playedSlots - 1).clamp(0, 999));
+                rosterChanged = true;
+              }
+            }
+          }
         }
         await _firebase.upsertSession(
           contract.id,
@@ -122,6 +163,11 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
             attendance: updatedAttendance,
           ),
         );
+        if (rosterChanged) {
+          await _firebase.updateContract(contract.id, {
+            'roster': updatedRoster.map((p) => p.toMap()).toList(),
+          });
+        }
       },
     );
 

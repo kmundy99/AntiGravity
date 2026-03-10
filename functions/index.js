@@ -251,7 +251,13 @@ async function generateMessageContent(db, msg, roster, contractData) {
         const sessionDoc = await db.collection("contracts").doc(msg.contract_id)
             .collection("sessions").doc(dateKey).get();
         const availability = sessionDoc.exists ? (sessionDoc.data().availability || {}) : {};
-        recipients = recipients.filter(r => !availability[r.uid]);
+        const attendance = sessionDoc.exists ? (sessionDoc.data().attendance || {}) : {};
+        // Both "available" and "played" count as a response in availability, or any valid manual attendance status
+        recipients = recipients.filter(r => {
+            const hasAvail = availability[r.uid] && ["available", "played", "backup", "unavailable"].includes(availability[r.uid]);
+            const hasAtten = attendance[r.uid] && ["available", "played", "backup", "unavailable", "reserve", "out", "charged"].includes(attendance[r.uid]);
+            return !hasAvail && !hasAtten;
+        });
     }
 
     // lineup_publish: run slot assignment algorithm and build per-player emails
@@ -267,12 +273,19 @@ async function generateMessageContent(db, msg, roster, contractData) {
         }
 
         const availability = sessionSnap.exists ? (sessionSnap.data().availability ?? {}) : {};
+        const attendance = sessionSnap.exists ? (sessionSnap.data().attendance ?? {}) : {};
         const spotsPerSession = (contractData.courts_count ?? 1) * 4;
 
         // Mirror of SlotAssignmentScreen._autoAssign
         const sorted = [...roster].sort((a, b) => {
-            const pctA = (a.paid_slots ?? 0) > 0 ? (a.played_slots ?? 0) / a.paid_slots : 0;
-            const pctB = (b.paid_slots ?? 0) > 0 ? (b.played_slots ?? 0) / b.paid_slots : 0;
+            const aOld = attendance[a.uid];
+            const aPlayedBefore = (aOld === "played" || aOld === "charged") ? Math.max(0, (a.played_slots || 0) - 1) : (a.played_slots || 0);
+            const pctA = (a.paid_slots || 0) > 0 ? aPlayedBefore / a.paid_slots : 0;
+
+            const bOld = attendance[b.uid];
+            const bPlayedBefore = (bOld === "played" || bOld === "charged") ? Math.max(0, (b.played_slots || 0) - 1) : (b.played_slots || 0);
+            const pctB = (b.paid_slots || 0) > 0 ? bPlayedBefore / b.paid_slots : 0;
+
             const cmp = pctA - pctB;
             return cmp !== 0 ? cmp : (a.display_name || "").localeCompare(b.display_name || "");
         });
@@ -281,10 +294,14 @@ async function generateMessageContent(db, msg, roster, contractData) {
         let confirmedCount = 0;
         for (const player of sorted) {
             const avail = availability[player.uid];
-            if (avail === "available" && confirmedCount < spotsPerSession) {
+            const atten = attendance[player.uid];
+            const isAvail = avail === "available" || avail === "played" || atten === "available" || atten === "played" || atten === "reserve";
+            const isBackup = avail === "backup" || atten === "backup";
+
+            if (isAvail && confirmedCount < spotsPerSession) {
                 assignment[player.uid] = "confirmed";
                 confirmedCount++;
-            } else if (avail === "available" || avail === "backup") {
+            } else if (isAvail || isBackup) {
                 assignment[player.uid] = "reserve";
             } else {
                 assignment[player.uid] = "out";
@@ -293,9 +310,23 @@ async function generateMessageContent(db, msg, roster, contractData) {
 
         const confirmedPlayers = roster.filter(p => assignment[p.uid] === "confirmed");
         const reservePlayers = roster.filter(p => assignment[p.uid] === "reserve");
-        const confirmedNames = confirmedPlayers.map(p => p.display_name || p.uid).join(", ") || "(none yet)";
+
+        const formatPlayer = (p, isConfirmed) => {
+            const paid = p.paid_slots || 0;
+            const name = p.display_name || p.uid;
+            if (paid === 0) return `- ${name}`;
+
+            const oldAtten = attendance[p.uid];
+            const truePlayedBefore = (oldAtten === 'played' || oldAtten === 'charged') ? Math.max(0, (p.played_slots || 0) - 1) : (p.played_slots || 0);
+
+            const pctBefore = Math.round((truePlayedBefore / paid) * 100);
+            const pctAfter = Math.round(((truePlayedBefore + (isConfirmed ? 1 : 0)) / paid) * 100);
+            return `- ${name} (Played: ${pctBefore}% -> ${pctAfter}%)`;
+        };
+
+        const confirmedNames = confirmedPlayers.map(p => formatPlayer(p, true)).join("\n") || "(none yet)";
         const reserveSection = reservePlayers.length > 0
-            ? `\n\nReserves: ${reservePlayers.map(p => p.display_name || p.uid).join(", ")}`
+            ? `\n\nReserves:\n${reservePlayers.map(p => formatPlayer(p, false)).join("\n")}`
             : "";
 
         const subjectLineup = "Lineup published for your tennis session";
@@ -374,6 +405,36 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
             const contractData = contractDoc.exists ? contractDoc.data() : {};
             const roster = contractData.roster || [];
 
+            // Rollover logic: when generating new availability requests/reminders, clear past reserves
+            if ((msg.type === "availability_request" || msg.type === "availability_reminder") && msg.session_date) {
+                try {
+                    const pastSessions = await db.collection("contracts").doc(msg.contract_id)
+                        .collection("sessions")
+                        .where("date", "<", msg.session_date)
+                        .orderBy("date", "desc")
+                        .limit(3)
+                        .get();
+                    for (const sDoc of pastSessions.docs) {
+                        const sData = sDoc.data();
+                        const att = { ...(sData.attendance || {}) };
+                        const assign = { ...(sData.assignment || {}) };
+                        let updated = false;
+                        for (const uid of Object.keys(att)) {
+                            if (att[uid] === "reserve") {
+                                att[uid] = "out";
+                                assign[uid] = "out";
+                                updated = true;
+                            }
+                        }
+                        if (updated) {
+                            await sDoc.ref.update({ attendance: att, assignment: assign });
+                        }
+                    }
+                } catch (e) {
+                    logger.warn("Failed to clear past reserves: ", e);
+                }
+            }
+
             // If pending_approval drafts already exist for this session date, skip or adopt
             if (msg.session_date) {
                 const dateKey = formatDateKey(msg.session_date.toDate());
@@ -425,12 +486,55 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
             if (msg.type === "lineup_publish" && result.sessionRef && result.assignment) {
                 const { assignment, confirmedPlayers, spotsNeeded, dateKey, sessionRef } = result;
 
+                const sessionSnap = await sessionRef.get();
+                const attendance = sessionSnap.exists ? (sessionSnap.data().attendance || {}) : {};
+                const updatedAttendance = { ...attendance };
+                const newRoster = [...roster];
+                let rosterChanged = false;
+
+                for (const [uid, status] of Object.entries(assignment)) {
+                    const oldAtten = attendance[uid];
+                    if (status === "confirmed") {
+                        updatedAttendance[uid] = "played";
+                        if (oldAtten !== "played" && oldAtten !== "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: (newRoster[pIdx].played_slots || 0) + 1 };
+                                rosterChanged = true;
+                            }
+                        }
+                    } else if (status === "reserve") {
+                        updatedAttendance[uid] = "reserve";
+                        if (oldAtten === "played" || oldAtten === "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: Math.max(0, (newRoster[pIdx].played_slots || 0) - 1) };
+                                rosterChanged = true;
+                            }
+                        }
+                    } else {
+                        updatedAttendance[uid] = "out";
+                        if (oldAtten === "played" || oldAtten === "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: Math.max(0, (newRoster[pIdx].played_slots || 0) - 1) };
+                                rosterChanged = true;
+                            }
+                        }
+                    }
+                }
+
                 await sessionRef.set({
                     id: dateKey,
                     date: msg.session_date,
                     assignment,
                     assignment_state: "published",
+                    attendance: updatedAttendance,
                 }, { merge: true });
+
+                if (rosterChanged) {
+                    await db.collection("contracts").doc(msg.contract_id).update({ roster: newRoster });
+                }
 
                 await Promise.all(renderedEmails.map(r =>
                     sendToUser(db, r.uid, r.subject, r.body, organizerEmail)
@@ -633,11 +737,55 @@ exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
                     .collection("sessions").doc(sessionDate);
                 const snap = await sessionRef.get();
                 const assignment = snap.exists ? (snap.data().assignment ?? {}) : {};
+                const attendance = snap.exists ? (snap.data().attendance ?? {}) : {};
                 const spotsPerSession = (contractData.courts_count ?? 1) * 4;
                 const confirmedPlayers = roster.filter(p => assignment[p.uid] === "confirmed");
                 const confirmedCount = confirmedPlayers.length;
 
-                await sessionRef.update({ assignment_state: "published" });
+                const updatedAttendance = { ...attendance };
+                const newRoster = [...roster];
+                let rosterChanged = false;
+
+                for (const [uid, status] of Object.entries(assignment)) {
+                    const oldAtten = attendance[uid];
+                    if (status === "confirmed") {
+                        updatedAttendance[uid] = "played";
+                        if (oldAtten !== "played" && oldAtten !== "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: (newRoster[pIdx].played_slots || 0) + 1 };
+                                rosterChanged = true;
+                            }
+                        }
+                    } else if (status === "reserve") {
+                        updatedAttendance[uid] = "reserve";
+                        if (oldAtten === "played" || oldAtten === "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: Math.max(0, (newRoster[pIdx].played_slots || 0) - 1) };
+                                rosterChanged = true;
+                            }
+                        }
+                    } else {
+                        updatedAttendance[uid] = "out";
+                        if (oldAtten === "played" || oldAtten === "charged") {
+                            const pIdx = newRoster.findIndex(p => p.uid === uid);
+                            if (pIdx !== -1) {
+                                newRoster[pIdx] = { ...newRoster[pIdx], played_slots: Math.max(0, (newRoster[pIdx].played_slots || 0) - 1) };
+                                rosterChanged = true;
+                            }
+                        }
+                    }
+                }
+
+                await sessionRef.update({
+                    assignment_state: "published",
+                    attendance: updatedAttendance,
+                });
+
+                if (rosterChanged) {
+                    await db.collection("contracts").doc(contractId).update({ roster: newRoster });
+                }
                 const r = renderedEmails[0];
                 if (r) {
                     const emailLookups = await Promise.all(roster.map(async p => {
