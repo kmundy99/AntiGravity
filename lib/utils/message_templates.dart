@@ -289,13 +289,13 @@ class MessageTemplates {
       case MessageType.subRequest:
         if (c.contextId != null) {
           return (uid) =>
-              'https://www.finapps.com/#/match/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
+              'https://www.adhoc-local.com/#/match/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.contractInvite:
         if (c.contextId != null) {
           return (uid) =>
-              'https://www.finapps.com/#/contract/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
+              'https://www.adhoc-local.com/#/contract/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.availabilityRequest:
@@ -305,7 +305,7 @@ class MessageTemplates {
               '${c.sessionDate!.month.toString().padLeft(2, '0')}-'
               '${c.sessionDate!.day.toString().padLeft(2, '0')}';
           return (uid) =>
-              'https://www.finapps.com/#/availability/${c.contextId}/$dateKey?uid=${Uri.encodeComponent(uid)}';
+              'https://www.adhoc-local.com/#/availability/${c.contextId}/$dateKey?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.sessionLineup:
@@ -314,7 +314,7 @@ class MessageTemplates {
               '${c.sessionDate!.month.toString().padLeft(2, '0')}-'
               '${c.sessionDate!.day.toString().padLeft(2, '0')}';
           return (uid) =>
-              'https://www.finapps.com/#/session/${c.contextId}/$dateKey/manage?uid=${Uri.encodeComponent(uid)}';
+              'https://www.adhoc-local.com/#/session/${c.contextId}/$dateKey/manage?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.paymentReminder:

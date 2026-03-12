@@ -165,7 +165,7 @@ class NotificationService {
 
   /// Builds the standard deep link for a match, optionally with a uid (UUID) for auto-login.
   static String _matchLink(String matchId, {String? uid}) {
-    final base = 'https://www.finapps.com/#/match/$matchId';
+    final base = 'https://www.adhoc-local.com/#/match/$matchId';
     if (uid != null && uid.isNotEmpty) {
       return '$base?uid=${Uri.encodeComponent(uid)}';
     }
@@ -428,7 +428,7 @@ class NotificationService {
     required String organizerName,
     String? customBody,
   }) async {
-    final link = 'https://www.finapps.com/#/contract/$contractId?uid=${Uri.encodeComponent(playerUid)}';
+    final link = 'https://www.adhoc-local.com/#/contract/$contractId?uid=${Uri.encodeComponent(playerUid)}';
 
     // textBody keeps the raw URL for SMS delivery
     final textBody = (customBody ?? contractInviteTemplate(
@@ -510,7 +510,7 @@ class NotificationService {
     final dateKey = '${sessionDate.year}-'
         '${sessionDate.month.toString().padLeft(2, '0')}-'
         '${sessionDate.day.toString().padLeft(2, '0')}';
-    final link = 'https://www.finapps.com/#/availability/$contractId/$dateKey'
+    final link = 'https://www.adhoc-local.com/#/availability/$contractId/$dateKey'
         '?uid=${Uri.encodeComponent(playerUid)}';
 
     final textBody = (customBody ?? availabilityRequestTemplate(

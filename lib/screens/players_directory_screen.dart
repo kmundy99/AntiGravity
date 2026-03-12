@@ -324,7 +324,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
         uid: uid,
         displayName: name,
         subject: "Please Update Your Tennis Availability",
-        body: "Hi $name,\n\nCould you please take a moment to put in some available times during the week when you would like to play? Entering your availability allows others to invite you to games during that time slot. You can then decide if you want to accept or not.\n\nClick the link below to set your availability (no login required):\nhttps://www.finapps.com/#/availability-setup?uid=$uid\n\nThanks!",
+        body: "Hi $name,\n\nCould you please take a moment to put in some available times during the week when you would like to play? Entering your availability allows others to invite you to games during that time slot. You can then decide if you want to accept or not.\n\nClick the link below to set your availability (no login required):\nhttps://www.adhoc-local.com/#/availability-setup?uid=$uid\n\nThanks!",
       ));
     }
 

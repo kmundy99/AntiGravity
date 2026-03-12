@@ -1925,7 +1925,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           builder: (ctx) => AlertDialog(
                             title: const Text("About Adhoc Local"),
                             content: const Text(
-                              "Adhoc Local is a community-driven tool designed to simplify tennis match organization in Lexington, MA. We focus on reducing the friction of invites and scheduling so you can spend more time on the court. Currently in private beta on finapps.com.",
+                              "Adhoc Local is a community-driven tool designed to simplify tennis match organization in Lexington, MA. We focus on reducing the friction of invites and scheduling so you can spend more time on the court. Currently in private beta on adhoc-local.com.",
                             ),
                             actions: [
                               TextButton(

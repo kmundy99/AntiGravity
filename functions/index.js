@@ -60,7 +60,7 @@ exports.sendEmail = onDocumentCreated(
         try {
             const msg = {
                 to: typeof to === 'string' ? [to] : to,
-                from: `${data.from_name || 'Adhoc Local'} <tennis@contact.finapps.com>`,
+                from: `${data.from_name || 'Adhoc Local'} <tennis@contact.adhoc-local.com>`,
                 subject: message.subject,
                 ...(message.text ? { text: message.text } : {}),
                 ...(message.html ? { html: message.html } : {}),
@@ -109,8 +109,8 @@ exports.askGemini = onRequest(
     {
         secrets: [geminiApiKey],
         cors: [
-            "https://finapps.com",
-            "https://www.finapps.com",
+            "https://adhoc-local.com",
+            "https://www.adhoc-local.com",
             "http://localhost:5000",
             "http://localhost:8080",
         ],
@@ -330,7 +330,7 @@ async function generateMessageContent(db, msg, roster, contractData) {
             : "";
 
         const subjectLineup = "Lineup published for your tennis session";
-        const gridLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/grid`;
+        const gridLink = `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/grid`;
         const groupBody = `Hi all,\n\nThe lineup for ${dateKey} has been set.\n\nConfirmed: ${confirmedNames}${reserveSection}\n\nView the full grid here: ${gridLink}`;
         const renderedEmails = [{
             uid: "_group_",
@@ -366,11 +366,11 @@ async function generateMessageContent(db, msg, roster, contractData) {
             if (confirmedCount >= spotsPerSession) return { skip: true };
         }
         linkTemplate = (uid) =>
-            `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
+            `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
     } else if ((msg.type === "availability_request" || msg.type === "availability_reminder") && msg.session_date) {
         const dateKey = formatDateKey(msg.session_date.toDate());
         linkTemplate = (uid) =>
-            `https://www.finapps.com/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
+            `https://www.adhoc-local.com/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
     }
 
     const renderedEmails = recipients.map(r => {
@@ -546,7 +546,7 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
                     if (outPlayers.length > 0) {
                         const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${dateKey}`;
                         await Promise.all(outPlayers.map(r => {
-                            const subLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const subLink = `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
                             const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
                             return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
                         }));
@@ -821,7 +821,7 @@ exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
                     if (outPlayers.length > 0) {
                         const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${sessionDate}`;
                         await Promise.all(outPlayers.map(r => {
-                            const subLink = `https://www.finapps.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const subLink = `https://www.adhoc-local.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
                             const body = `Hi ${r.display_name || r.uid}, the lineup for ${sessionDate} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
                             return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
                         }));
@@ -947,7 +947,7 @@ exports.onSessionAssignmentChange = onDocumentUpdated(
                             const now = firestore.Timestamp.now();
 
                             const sendPromises = outPlayers.map(r => {
-                                const subLink = `https://www.finapps.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
+                                const subLink = `https://www.adhoc-local.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
                                 const body = `Hi ${r.display_name || r.uid}, a spot has opened up for the ${sessionDate} session. Claim it here: ${subLink}`;
                                 return sendToUser(db, r.uid, subjectSub, body);
                             });
@@ -1009,7 +1009,7 @@ exports.onSessionAssignmentChange = onDocumentUpdated(
                     });
                     const subjectLineup = "Updated lineup for your tennis session";
                     const sendPromises = confirmedPlayers.map(r => {
-                        const manageLink = `https://www.finapps.com/#/session/${contractId}/${sessionDate}/manage?uid=${encodeURIComponent(r.uid)}`;
+                        const manageLink = `https://www.adhoc-local.com/#/session/${contractId}/${sessionDate}/manage?uid=${encodeURIComponent(r.uid)}`;
                         const body = `Hi ${r.display_name || r.uid}, the lineup for ${sessionDate} has been updated. To manage your spot: ${manageLink}`;
                         return sendToUser(db, r.uid, subjectLineup, body);
                     });
