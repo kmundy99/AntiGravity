@@ -60,7 +60,7 @@ exports.sendEmail = onDocumentCreated(
         try {
             const msg = {
                 to: typeof to === 'string' ? [to] : to,
-                from: `${data.from_name || 'Adhoc Local'} <tennis@contact.adhoc-local.com>`,
+                from: `${data.from_name || 'Adhoc Local'} <tennis@mail.adhoc-local.com>`,
                 subject: message.subject,
                 ...(message.text ? { text: message.text } : {}),
                 ...(message.html ? { html: message.html } : {}),

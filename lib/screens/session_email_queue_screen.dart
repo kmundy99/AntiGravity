@@ -285,7 +285,7 @@ class _MessageTypeRowState extends State<_MessageTypeRow> {
       context: context,
       builder: (ctx) => _ReviewDialog(
         messages: [widget.message],
-        title: '${_typeLabel} — ${widget.sessionDateKey}',
+        title: '$_typeLabel — ${widget.sessionDateKey}',
         onSend: () {
           Navigator.pop(ctx);
           _send();
@@ -448,7 +448,8 @@ class _ReviewDialog extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: messages
-                      .map((msg) => _MessageReviewCard(
+                      .map<Widget>((msg) => _MessageReviewCard(
+                            key: ValueKey(msg.id),
                             msg: msg,
                             typeLabel: _typeLabel(msg.type),
                           ))
@@ -495,7 +496,7 @@ class _MessageReviewCard extends StatefulWidget {
   final ScheduledMessage msg;
   final String typeLabel;
 
-  const _MessageReviewCard({required this.msg, required this.typeLabel});
+  const _MessageReviewCard({super.key, required this.msg, required this.typeLabel});
 
   @override
   State<_MessageReviewCard> createState() => _MessageReviewCardState();
@@ -517,6 +518,25 @@ class _MessageReviewCardState extends State<_MessageReviewCard> {
 
     final initialBody = _renderedEmails.isNotEmpty ? _renderedEmails.first.body : widget.msg.body;
     _bodyController = TextEditingController(text: initialBody);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageReviewCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the streaming document changes (e.g., behind the scenes, or due to our own write completing),
+    // sync our local state back up to ensure we don't hold stale data or lose recipients we didn't touch.
+    if (widget.msg != oldWidget.msg) {
+      _recipients = List.from(widget.msg.recipients);
+      _renderedEmails = List.from(widget.msg.renderedEmails);
+      
+      // Only update the text field if the user isn't currently editing it.
+      if (!FocusScope.of(context).hasFocus) {
+        final newBody = _renderedEmails.isNotEmpty ? _renderedEmails.first.body : widget.msg.body;
+        if (_bodyController.text != newBody) {
+          _bodyController.text = newBody;
+        }
+      }
+    }
   }
 
   @override

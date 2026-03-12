@@ -317,6 +317,22 @@ class _ReviewDialogState extends State<_ReviewDialog> {
   }
 
   @override
+  void didUpdateWidget(covariant _ReviewDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.message != oldWidget.message) {
+      _recipients = List.from(widget.message.recipients);
+      _renderedEmails = List.from(widget.message.renderedEmails);
+      
+      if (!FocusScope.of(context).hasFocus) {
+        final newBody = _renderedEmails.isNotEmpty ? _renderedEmails.first.body : widget.message.body;
+        if (_bodyController.text != newBody) {
+          _bodyController.text = newBody;
+        }
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _bodyController.dispose();
     _debounce?.cancel();
