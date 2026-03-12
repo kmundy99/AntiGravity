@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -85,9 +86,7 @@ class _GeneralMessageRowState extends State<_GeneralMessageRow> {
 
   Future<void> _send() async {
     final msg = widget.message;
-    final recipientCount = msg.renderedEmails.isNotEmpty
-        ? msg.renderedEmails.length
-        : msg.recipients.length;
+    final recipientCount = msg.recipients.length;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -196,9 +195,7 @@ class _GeneralMessageRowState extends State<_GeneralMessageRow> {
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
-    final recipientCount = msg.renderedEmails.isNotEmpty
-        ? msg.renderedEmails.length
-        : msg.recipients.length;
+    final recipientCount = msg.recipients.length;
 
     // Remove milliseconds and parse to Local for better display, or just use generatedAt directly
     final generatedStr = msg.generatedAt != null
@@ -303,12 +300,87 @@ class _ReviewDialog extends StatefulWidget {
 
 class _ReviewDialogState extends State<_ReviewDialog> {
   bool _showAllRecipients = false;
+  late TextEditingController _bodyController;
+  Timer? _debounce;
+
+  late List<RecipientInfo> _recipients;
+  late List<RenderedEmail> _renderedEmails;
+
+  @override
+  void initState() {
+    super.initState();
+    _recipients = List.from(widget.message.recipients);
+    _renderedEmails = List.from(widget.message.renderedEmails);
+
+    final initialBody = _renderedEmails.isNotEmpty ? _renderedEmails.first.body : widget.message.body;
+    _bodyController = TextEditingController(text: initialBody);
+  }
+
+  @override
+  void dispose() {
+    _bodyController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onBodyChanged(String newBody) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 800), () async {
+      // Update all rendered emails with the new body template
+      // Note: for general requests, there are no personalization tags like {name} in the body currently,
+      // the template creates it. But we update it uniformly here.
+      final msg = widget.message;
+      final updatedRendered = _renderedEmails.map((e) => e.copyWith(body: newBody)).toList();
+
+      // Also update local state so if we rely on it elsewhere it's fresh
+      if (mounted) {
+        setState(() {
+          _renderedEmails = updatedRendered;
+        });
+      }
+
+      try {
+        await FirebaseService().updateScheduledMessage(msg.id, {
+          'body': newBody,
+          'rendered_emails': updatedRendered.map((e) => e.toMap()).toList(),
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to save email draft: $e')),
+          );
+        }
+      }
+    });
+  }
+
+  void _removeRecipient(RecipientInfo player) async {
+    setState(() {
+      _recipients.removeWhere((r) => r.uid == player.uid);
+      _renderedEmails.removeWhere((r) => r.uid == player.uid);
+    });
+
+    try {
+      await FirebaseService().updateScheduledMessage(widget.message.id, {
+        'recipients': _recipients.map((e) => e.toMap()).toList(),
+        'rendered_emails': _renderedEmails.map((e) => e.toMap()).toList(),
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove recipient: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final rendered = widget.message.renderedEmails;
+    final rendered = _renderedEmails;
     final sample = rendered.isNotEmpty ? rendered.first : null;
-    final recipientCount = rendered.isNotEmpty ? rendered.length : widget.message.recipients.length;
+    
+    final recipients = _recipients;
+    final recipientCount = recipients.length;
 
     return Dialog(
       child: ConstrainedBox(
@@ -373,19 +445,26 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                               const SizedBox(height: 6),
                               Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey.shade50,
-                                  border: Border.all(color: Colors.grey.shade200),
+                                  color: Colors.white,
+                                  border: Border.all(color: Colors.grey.shade300),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: Text(
-                                  sample.body,
+                                child: TextField(
+                                  controller: _bodyController,
+                                  maxLines: null,
+                                  minLines: 3,
                                   style: const TextStyle(fontSize: 12, height: 1.5),
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.all(10),
+                                    hintText: 'Email body...',
+                                  ),
+                                  onChanged: _onBodyChanged,
                                 ),
                               ),
-                              if (rendered.length > 1) ...[
-                                const SizedBox(height: 6),
+                              const SizedBox(height: 6),
+                              if (rendered.length > 1)
                                 Text(
                                   'Showing email for ${sample.displayName}. '
                                   'All ${rendered.length} emails are personalized with each player\'s name and link.',
@@ -393,33 +472,34 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                                     fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic,
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: () => setState(() => _showAllRecipients = !_showAllRecipients),
-                                  style: TextButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                    padding: EdgeInsets.zero,
-                                    foregroundColor: Colors.blue.shade700,
-                                  ),
-                                  child: Text(
-                                    _showAllRecipients
-                                        ? 'Hide recipient list'
-                                        : 'Show all ${rendered.length} recipients',
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
+                              TextButton(
+                                onPressed: () => setState(() => _showAllRecipients = !_showAllRecipients),
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  foregroundColor: Colors.blue.shade700,
                                 ),
-                                if (_showAllRecipients)
-                                  Wrap(
-                                    spacing: 4,
-                                    runSpacing: 4,
-                                    children: rendered
-                                        .map((r) => Chip(
-                                              label: Text(r.displayName, style: const TextStyle(fontSize: 11)),
-                                              visualDensity: VisualDensity.compact,
-                                              backgroundColor: Colors.blue.shade50,
-                                            ))
-                                        .toList(),
-                                  ),
-                              ],
+                                child: Text(
+                                  _showAllRecipients
+                                      ? 'Hide recipient list'
+                                      : 'Show all ${recipients.length} recipients',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                              if (_showAllRecipients)
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: recipients
+                                      .map((r) => InputChip(
+                                            label: Text(r.displayName, style: const TextStyle(fontSize: 11)),
+                                            visualDensity: VisualDensity.compact,
+                                            backgroundColor: Colors.blue.shade50,
+                                            deleteIcon: const Icon(Icons.close, size: 14, color: Colors.red),
+                                            onDeleted: () => _removeRecipient(r),
+                                          ))
+                                      .toList(),
+                                ),
                             ] else
                               Text(
                                 'No content generated.',

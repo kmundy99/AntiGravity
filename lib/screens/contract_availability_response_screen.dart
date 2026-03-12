@@ -315,8 +315,8 @@ class _ContractAvailabilityResponseScreenState
       'available' => (
           Icons.check_circle,
           Colors.green.shade700,
-          "You're in!",
-          'Your availability has been recorded. See you on the court!',
+          "Marked Available",
+          'Your availability has been recorded.',
         ),
       'backup' => (
           Icons.people,

@@ -330,7 +330,8 @@ async function generateMessageContent(db, msg, roster, contractData) {
             : "";
 
         const subjectLineup = "Lineup published for your tennis session";
-        const groupBody = `Hi all,\n\nThe lineup for ${dateKey} has been set.\n\nConfirmed: ${confirmedNames}${reserveSection}`;
+        const gridLink = `https://www.finapps.com/#/session/${msg.contract_id}/${dateKey}/grid`;
+        const groupBody = `Hi all,\n\nThe lineup for ${dateKey} has been set.\n\nConfirmed: ${confirmedNames}${reserveSection}\n\nView the full grid here: ${gridLink}`;
         const renderedEmails = [{
             uid: "_group_",
             display_name: `All ${roster.length} players`,
@@ -788,7 +789,10 @@ exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
                 }
                 const r = renderedEmails[0];
                 if (r) {
+                    const recipientUids = new Set((msg.recipients || []).map(rec => rec.uid));
                     const emailLookups = await Promise.all(roster.map(async p => {
+                        if (!recipientUids.has(p.uid)) return null;
+
                         try {
                             const userDoc = await db.collection("users").doc(p.uid).get();
                             if (!userDoc.exists) return null;

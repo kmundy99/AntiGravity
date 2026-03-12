@@ -293,7 +293,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       const SizedBox(height: 8),
                       ElevatedButton.icon(
                         icon: const Icon(Icons.mark_email_unread_outlined, size: 16),
-                        label: const Text("Generate & Preview Emails"),
+                        label: const Text("Request Availability"),
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(40),
                           backgroundColor: Colors.orange.shade700,
@@ -324,7 +324,7 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
         uid: uid,
         displayName: name,
         subject: "Please Update Your Tennis Availability",
-        body: "Hi $name,\n\nPlease take a moment to update your general weekly availability for upcoming tennis matches. It takes less than 10 seconds and requires no login.\n\nClick the link below to set your availability:\nhttps://www.finapps.com/#/availability-setup?uid=$uid\n\nThanks!",
+        body: "Hi $name,\n\nCould you please take a moment to put in some available times during the week when you would like to play? Entering your availability allows others to invite you to games during that time slot. You can then decide if you want to accept or not.\n\nClick the link below to set your availability (no login required):\nhttps://www.finapps.com/#/availability-setup?uid=$uid\n\nThanks!",
       ));
     }
 

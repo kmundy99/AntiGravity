@@ -5,6 +5,44 @@ import '../services/firebase_service.dart';
 import 'compose_message_screen.dart';
 import 'slot_assignment_screen.dart';
 
+class ContractSessionGridLoaderScreen extends StatelessWidget {
+  final String contractId;
+  final String sessionDate;
+
+  const ContractSessionGridLoaderScreen({
+    super.key,
+    required this.contractId,
+    required this.sessionDate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final firebase = FirebaseService();
+    return StreamBuilder<Contract?>(
+      stream: firebase.getContractStream(contractId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final contract = snapshot.data;
+        if (contract == null) {
+          return const Scaffold(
+            body: Center(child: Text('Contract not found')),
+          );
+        }
+        return ContractSessionGridScreen(
+          contract: contract,
+          currentUserUid: 'read_only_user', // dummy uid since it's read only
+          readOnly: true,
+        );
+      },
+    );
+  }
+}
+
+
 // Column widths for the fixed stats panel (total: 300px)
 const double _colName = 160;
 const double _colPaid = 35;

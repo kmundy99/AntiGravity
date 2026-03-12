@@ -18,6 +18,7 @@ import 'screens/contract_session_player_screen.dart';
 import 'screens/complete_profile_screen.dart';
 import 'screens/contract_sub_in_screen.dart';
 import 'screens/availability_setup_screen.dart';
+import 'screens/contract_session_grid_screen.dart';
 import 'services/firebase_service.dart';
 
 import 'screens/match_chat_screen.dart';
@@ -45,11 +46,19 @@ class TennisApp extends StatelessWidget {
         if (settings.name != null && settings.name!.startsWith('/session/')) {
           final uri = Uri.parse(settings.name!);
           final segments = uri.pathSegments;
-          // segments: ['session', '<contractId>', '<sessionDate>', 'manage'|'subin']
+          // segments: ['session', '<contractId>', '<sessionDate>', 'manage'|'subin'|'grid']
           final contractId = segments.length > 1 ? segments[1] : '';
           final sessionDate = segments.length > 2 ? segments[2] : '';
           final action = segments.length > 3 ? segments[3] : 'manage';
           final uid = uri.queryParameters['uid'] ?? '';
+          if (action == 'grid') {
+            return MaterialPageRoute(
+              builder: (_) => ContractSessionGridLoaderScreen(
+                contractId: contractId,
+                sessionDate: sessionDate,
+              ),
+            );
+          }
           if (action == 'subin') {
             return MaterialPageRoute(
               builder: (_) => ContractSubInScreen(

@@ -550,6 +550,20 @@ class RenderedEmail {
     'subject': subject,
     'body': body,
   };
+
+  RenderedEmail copyWith({
+    String? uid,
+    String? displayName,
+    String? subject,
+    String? body,
+  }) {
+    return RenderedEmail(
+      uid: uid ?? this.uid,
+      displayName: displayName ?? this.displayName,
+      subject: subject ?? this.subject,
+      body: body ?? this.body,
+    );
+  }
 }
 
 /// A scheduled auto-message (availability request or payment reminder).
