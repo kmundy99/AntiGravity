@@ -7,6 +7,7 @@ import '../widgets/add_custom_player_button.dart';
 import '../utils/player_sort.dart';
 import 'compose_message_screen.dart';
 import 'general_email_queue_screen.dart';
+import '../services/location_service.dart';
 
 class PlayersDirectoryScreen extends StatefulWidget {
   final String currentUserUid;
@@ -36,6 +37,9 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
   String _filterName = "";
   String _filterGender = "Any";
   bool _filterMyContract = false;
+  
+  double? _filterMaxDistance;
+  bool _initializedDistance = false;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +57,14 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
         );
         if (currentUserDocIndex == -1) return const SizedBox.shrink();
         final currentUser = User.fromFirestore(docs[currentUserDocIndex]);
+
+        // Initialize distance filter to Any — Players page shows everyone by default
+        if (!_initializedDistance) {
+          _filterMaxDistance = 1000.0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _initializedDistance = true);
+          });
+        }
 
         // Filter players based on state
         final filteredDocs = docs.where((doc) {
@@ -93,6 +105,13 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
             if (rosterUids == null || !rosterUids.contains(doc.id)) return false;
           }
 
+          if (_filterMaxDistance != null && _filterMaxDistance! < 1000) { // 1000 acts as "Any"
+            final distance = LocationService().getDistanceBetweenAddresses(currentUser.address, user.address);
+            if (distance != null && distance > _filterMaxDistance!) {
+              return false;
+            }
+          }
+
           return true;
         }).toList();
 
@@ -127,6 +146,34 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                         setState(() => _filterMinNtrp = val ?? 0.0),
                   ),
                 ),
+                  // Only show the distance filter if the user's zip code is known
+                  if (currentUser.address.isNotEmpty && LocationService().extractZipCode(currentUser.address) != null)
+                    ListTile(
+                      title: const Text("Maximum Distance"),
+                      subtitle: const Text("Based on your zip code"),
+                      trailing: DropdownButton<double>(
+                        value: _filterMaxDistance ?? 10.0,
+                        items: const [
+                          DropdownMenuItem(value: 3.0, child: Text('3 miles')),
+                          DropdownMenuItem(value: 5.0, child: Text('5 miles')),
+                          DropdownMenuItem(value: 10.0, child: Text('10 miles')),
+                          DropdownMenuItem(value: 15.0, child: Text('15 miles')),
+                          DropdownMenuItem(value: 20.0, child: Text('20 miles')),
+                          DropdownMenuItem(value: 30.0, child: Text('30 miles')),
+                          DropdownMenuItem(value: 1000.0, child: Text('Any')),
+                        ],
+                        onChanged: (val) async {
+                          if (val != null) {
+                            setState(() => _filterMaxDistance = val);
+                            // Save preference to Firestore
+                            await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(widget.currentUserUid)
+                                .update({'defaultDistanceFilter': val});
+                          }
+                        },
+                      ),
+                    ),
                 ListTile(
                   title: const Text("Filter by Circle"),
                   trailing: DropdownButton<int?>(
@@ -384,6 +431,16 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
           : parts[0].trim();
     }
 
+    final double? distFromMe = (!isMe && currentUser.address.isNotEmpty)
+        ? LocationService().getDistanceBetweenAddresses(currentUser.address, user.address)
+        : null;
+    // True when we have addresses but zip codes are missing/unrecognised
+    final bool zipMissing = !isMe &&
+        distFromMe == null &&
+        (currentUser.address.isNotEmpty || user.address.isNotEmpty) &&
+        (LocationService().extractZipCode(currentUser.address) == null ||
+            LocationService().extractZipCode(user.address) == null);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: InkWell(
@@ -446,6 +503,24 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                             color: Colors.grey.shade600,
                           ),
                         ),
+                        if (distFromMe != null)
+                          Text(
+                            "${distFromMe.toStringAsFixed(1)} miles away",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          )
+                        else if (zipMissing)
+                          Text(
+                            "Add zip code to address for distance",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange.shade700,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                       ],
                     ),
                   ),

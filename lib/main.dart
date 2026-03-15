@@ -29,9 +29,13 @@ import 'utils/availability_utils.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'widgets/weekly_availability_matrix.dart';
 
+import 'services/location_service.dart';
+import 'screens/integrated_create_match_screen.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await LocationService().loadZipData();
   runApp(const TennisApp());
 }
 
@@ -501,6 +505,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _saveProfile() async {
     if (_myUid == null) return;
+
+    if (!_isQuickSetup) {
+      final addressText = _addressCtrl.text.trim();
+      if (addressText.isNotEmpty) {
+        final extractedZip = LocationService().extractZipCode(addressText);
+        if (extractedZip == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please enter a valid 5-digit zip code.')),
+            );
+          }
+          return;
+        }
+      }
+    }
 
     final contactValue = _user?.primaryContact ?? _phoneCtrl.text.trim();
 
@@ -1269,21 +1288,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (chosenSlot.isAfter(
                         DateTime.now().subtract(const Duration(hours: 1)),
                       )) {
-                        setState(() {
-                          final isSameSlot =
-                              _selectedSlot != null &&
-                              _selectedSlot!.year == chosenSlot.year &&
-                              _selectedSlot!.month == chosenSlot.month &&
-                              _selectedSlot!.day == chosenSlot.day &&
-                              _selectedSlot!.hour == chosenSlot.hour;
-                          if (isSameSlot) {
-                            _selectedSlot = null;
-                            _selectedPlayerUids = {};
-                          } else {
-                            _selectedSlot = chosenSlot;
-                            _selectedPlayerUids = {};
-                          }
-                        });
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => IntegratedCreateMatchScreen(
+                              prefillDate: chosenSlot,
+                            ),
+                          ),
+                        );
                       }
                     }
                   },

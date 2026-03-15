@@ -9,6 +9,7 @@ import 'secrets.dart';
 import 'screens/select_players_screen.dart';
 
 import 'services/match_service.dart';
+import 'services/location_service.dart';
 
 class CreateMatchScreen extends StatefulWidget {
   final DateTime? prefillDate;
@@ -111,9 +112,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
     }
   }
 
-  Future<List<String>> _fetchPlaceSuggestions(String input) async {
+  Future<List<Map<String, String>>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
-
     try {
       final response = await http.post(
         Uri.parse('https://places.googleapis.com/v1/places:autocomplete'),
@@ -128,13 +128,15 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
         final suggestions = json['suggestions'] as List? ?? [];
         return suggestions
             .where((s) => s['placePrediction'] != null)
-            .map((s) => s['placePrediction']['text']['text'] as String)
+            .map((s) => {
+                  'text': s['placePrediction']['text']['text'] as String,
+                  'placeId': s['placePrediction']['placeId'] as String,
+                })
             .toList();
       }
     } catch (e) {
       debugPrint('Places autocomplete error: $e');
     }
-
     return [];
   }
 
@@ -149,17 +151,23 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
             "COURT LOCATION",
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
-          TypeAheadField<String>(
+          TypeAheadField<Map<String, String>>(
             suggestionsCallback: _fetchPlaceSuggestions,
             itemBuilder: (context, suggestion) {
               return ListTile(
                 leading: const Icon(Icons.place),
-                title: Text(suggestion),
+                title: Text(suggestion['text']!),
               );
             },
-            onSelected: (suggestion) {
-              setState(() => _selectedAddress = suggestion);
-              _addressController?.text = suggestion;
+            onSelected: (suggestion) async {
+              final display = suggestion['text']!;
+              final placeId = suggestion['placeId']!;
+              _addressController?.text = display;
+              setState(() => _selectedAddress = display);
+              final formatted = await LocationService.fetchFormattedAddress(placeId, placesApiKey);
+              if (formatted != null && mounted) {
+                setState(() => _selectedAddress = formatted);
+              }
             },
             builder: (context, controller, focusNode) {
               _addressController = controller;
@@ -323,6 +331,7 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                     alreadyInRosterUids: _selectedRecruits
                         .map((u) => u.uid)
                         .toList(),
+                    targetLocation: _selectedAddress.isNotEmpty ? _selectedAddress : null,
                   ),
                 ),
               );

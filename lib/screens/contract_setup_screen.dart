@@ -7,6 +7,7 @@ import 'dart:convert';
 import '../models.dart';
 import '../secrets.dart';
 import '../services/firebase_service.dart';
+import '../services/location_service.dart';
 import '../utils/message_templates.dart';
 
 class ContractSetupScreen extends StatefulWidget {
@@ -135,7 +136,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
 
   int _timeOfDayToMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
 
-  Future<List<String>> _fetchPlaceSuggestions(String input) async {
+  Future<List<Map<String, String>>> _fetchPlaceSuggestions(String input) async {
     if (input.isEmpty) return [];
     try {
       final response = await http.post(
@@ -151,7 +152,10 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
         final suggestions = json['suggestions'] as List? ?? [];
         return suggestions
             .where((s) => s['placePrediction'] != null)
-            .map((s) => s['placePrediction']['text']['text'] as String)
+            .map((s) => {
+                  'text': s['placePrediction']['text']['text'] as String,
+                  'placeId': s['placePrediction']['placeId'] as String,
+                })
             .toList();
       }
     } catch (e) {
@@ -684,15 +688,21 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          TypeAheadField<String>(
+          TypeAheadField<Map<String, String>>(
             suggestionsCallback: _fetchPlaceSuggestions,
             itemBuilder: (context, suggestion) => ListTile(
               leading: const Icon(Icons.place),
-              title: Text(suggestion),
+              title: Text(suggestion['text']!),
             ),
-            onSelected: (suggestion) {
-              setState(() => _clubAddress = suggestion);
-              _addressController?.text = suggestion;
+            onSelected: (suggestion) async {
+              final display = suggestion['text']!;
+              final placeId = suggestion['placeId']!;
+              _addressController?.text = display;
+              setState(() => _clubAddress = display);
+              final formatted = await LocationService.fetchFormattedAddress(placeId, placesApiKey);
+              if (formatted != null && mounted) {
+                setState(() => _clubAddress = formatted);
+              }
             },
             builder: (context, controller, focusNode) {
               _addressController = controller;

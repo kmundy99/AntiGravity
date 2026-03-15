@@ -94,6 +94,7 @@ class _ContractScreenState extends State<ContractScreen> {
         builder: (_) => SelectPlayersScreen(
           currentUserUid: widget.currentUserUid,
           alreadyInRosterUids: contract.roster.map((p) => p.uid).toList(),
+          targetLocation: contract.clubAddress,
         ),
       ),
     );

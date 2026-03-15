@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/location_service.dart';
 
 /// Standalone profile completion screen shown after a player responds to an
 /// availability request or match invite. Prompts for essential missing fields.
@@ -56,6 +57,19 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   }
 
   Future<void> _save() async {
+    final addressText = _addressCtrl.text.trim();
+    if (addressText.isNotEmpty) {
+      final extractedZip = LocationService().extractZipCode(addressText);
+      if (extractedZip == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enter a valid 5-digit zip code.')),
+          );
+        }
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
       await FirebaseFirestore.instance
@@ -220,5 +234,6 @@ bool isProfileIncomplete(Map<String, dynamic> data) {
   final ntrp = (data['ntrp_level'] ?? 0.0).toDouble();
   final email = (data['email'] ?? '') as String;
   final phone = (data['phone_number'] ?? '') as String;
-  return ntrp == 0.0 || email.isEmpty || phone.isEmpty;
+  final address = (data['address'] ?? '') as String;
+  return ntrp == 0.0 || email.isEmpty || phone.isEmpty || address.isEmpty;
 }

@@ -44,6 +44,7 @@ class User {
   final String? createdByUid; // UID of the user who created this provisional account
   final Timestamp? lastLoginAt;
   final bool isAdmin;
+  final double defaultDistanceFilter;
 
   User({
     this.uid = '',
@@ -65,6 +66,7 @@ class User {
     this.createdByUid,
     this.lastLoginAt,
     this.isAdmin = false,
+    this.defaultDistanceFilter = 10.0,
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
@@ -115,6 +117,7 @@ class User {
               .toList() ??
           [],
       isAdmin: data['isAdmin'] ?? data['is_admin'] ?? false,
+      defaultDistanceFilter: (data['defaultDistanceFilter'] ?? 10.0).toDouble(),
     );
   }
 
@@ -136,6 +139,7 @@ class User {
       if (weeklyAvailability.isNotEmpty) 'weekly_availability': weeklyAvailability,
       'blackouts': blackouts.map((b) => b.toMap()).toList(),
       if (isAdmin) 'isAdmin': isAdmin,
+      'defaultDistanceFilter': defaultDistanceFilter,
     };
   }
 }

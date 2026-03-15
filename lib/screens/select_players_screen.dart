@@ -4,15 +4,18 @@ import '../models.dart';
 import '../widgets/add_custom_player_button.dart';
 import '../utils/feedback_utils.dart';
 import '../utils/player_sort.dart';
+import '../services/location_service.dart';
 
 class SelectPlayersScreen extends StatefulWidget {
   final String currentUserUid;
   final List<String> alreadyInRosterUids;
+  final String? targetLocation; // e.g., the court's address
 
   const SelectPlayersScreen({
     super.key,
     required this.currentUserUid,
     this.alreadyInRosterUids = const [],
+    this.targetLocation,
   });
 
   @override
@@ -23,9 +26,11 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
   final Set<String> _selectedUids = {};
   final List<User> _selectedUsers = [];
 
-  double _minNtrpFilter = 0.0;
+  double? _minNtrpFilter;
   int? _circleFilter;
   String _genderFilter = 'Any';
+  double? _maxDistanceFilter;
+  bool _initializedDefaults = false;
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +85,9 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
             if (doc.id == widget.currentUserUid) return false;
             if (widget.alreadyInRosterUids.contains(doc.id)) return false;
 
-            if (user.ntrpLevel < _minNtrpFilter) return false;
+            if (_minNtrpFilter != null && user.ntrpLevel < _minNtrpFilter!) {
+              return false;
+            }
 
             if (_circleFilter != null) {
               final assignedCircle = currentUser.circleRatings[doc.id];
@@ -91,12 +98,28 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
               return false;
             }
 
+            if (widget.targetLocation != null && _maxDistanceFilter != null && _maxDistanceFilter! < 1000) {
+              final distance = LocationService().getDistanceBetweenAddresses(widget.targetLocation!, user.address);
+              if (distance != null && distance > _maxDistanceFilter!) {
+                return false;
+              }
+            }
+
             return true;
           }).toList()
             ..sort((a, b) => sortPlayerDocs(a, b,
               currentUserUid: widget.currentUserUid,
               circleRatings: currentUser.circleRatings,
             ));
+
+          // Set defaults once after reading the current user
+          if (!_initializedDefaults) {
+            _minNtrpFilter = null; // default to Any — caller sets match min NTRP separately
+            _maxDistanceFilter = 1000.0; // default to Any distance
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _initializedDefaults = true);
+            });
+          }
 
           return Column(
             children: [
@@ -154,7 +177,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                           ),
                           DropdownButton<double>(
                             isExpanded: true,
-                            value: _minNtrpFilter,
+                            value: _minNtrpFilter ?? 0.0,
                             items: [0.0, 3.0, 3.5, 4.0, 4.5, 5.0]
                                 .map(
                                   (v) => DropdownMenuItem(
@@ -167,7 +190,7 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                                 )
                                 .toList(),
                             onChanged: (val) =>
-                                setState(() => _minNtrpFilter = val!),
+                                setState(() => _minNtrpFilter = val),
                           ),
                         ],
                       ),
@@ -208,6 +231,44 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                   ],
                 ),
               ),
+              if (widget.targetLocation != null && widget.targetLocation!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  color: Colors.grey.shade100,
+                  child: Row(
+                    children: [
+                      const Text(
+                        "Max Distance from Court:",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<double>(
+                          isExpanded: true,
+                          value: _maxDistanceFilter ?? 10.0,
+                          items: const [
+                            DropdownMenuItem(value: 3.0, child: Text('3 miles')),
+                            DropdownMenuItem(value: 5.0, child: Text('5 miles')),
+                            DropdownMenuItem(value: 10.0, child: Text('10 miles')),
+                            DropdownMenuItem(value: 15.0, child: Text('15 miles')),
+                            DropdownMenuItem(value: 20.0, child: Text('20 miles')),
+                            DropdownMenuItem(value: 30.0, child: Text('30 miles')),
+                            DropdownMenuItem(value: 1000.0, child: Text('Any')),
+                          ],
+                          onChanged: (val) async {
+                            if (val != null) {
+                              setState(() => _maxDistanceFilter = val);
+                              await FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(widget.currentUserUid)
+                                  .update({'defaultDistanceFilter': val});
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16.0,
@@ -266,13 +327,34 @@ class _SelectPlayersScreenState extends State<SelectPlayersScreen> {
                     final isSelected = _selectedUids.contains(docId);
                     final assignedCircle = currentUser.circleRatings[docId];
 
+                    final double? distFromCourt = (widget.targetLocation != null && widget.targetLocation!.isNotEmpty)
+                        ? LocationService().getDistanceBetweenAddresses(widget.targetLocation!, user.address)
+                        : null;
+                    final double? distFromOrganizer = currentUser.address.isNotEmpty
+                        ? LocationService().getDistanceBetweenAddresses(currentUser.address, user.address)
+                        : null;
+                    final double? distToShow = distFromCourt ?? distFromOrganizer;
+                    final String distLabel = distFromCourt != null ? 'miles from court' : 'miles from organizer';
+
                     return ListTile(
                       leading: CircleAvatar(
                         child: Text(user.displayName[0].toUpperCase()),
                       ),
                       title: Text(user.displayName),
-                      subtitle: Text(
-                        "NTRP: ${user.ntrpLevel} | ${user.gender}",
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("NTRP: ${user.ntrpLevel} | ${user.gender}"),
+                          if (distToShow != null)
+                            Text(
+                              "${distToShow.toStringAsFixed(1)} $distLabel",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blueGrey.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,

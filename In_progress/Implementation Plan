@@ -1,0 +1,31 @@
+# Match Creation Flow Redesign & Distance Fixes
+
+## Issue Context
+
+1. **Distance Not Showing on Card**: The `assets/us_zip_codes.json` provided with the app was a very small dummy dataset. When calculating distance, if the player's zip code is not in that JSON file, the app returns null and does not display the distance. We will expand the dummy file to include Lexington, MA zip codes (02420, 02421) and surrounding Boston zip codes so testing works out of the box.
+2. **UX Flow**: Currently, clicking an empty calendar slot opens a sidebar showing player availability, with a "Create Match" button at the bottom. Tapping "Create Match" opens a static form, which then leads to a separate "Select Players" screen.
+
+## Proposed Changes
+
+We will merge the match detail form and the player selection list into a single, cohesive, dynamic screen: `IntegratedCreateMatchScreen`.
+
+### 1. Update `assets/us_zip_codes.json`
+- Add Lexington, MA coordinates (02420, 02421).
+- Add surrounding area coordinates (Boston, Bedford, etc.) so distances can be correctly calculated during local testing.
+
+### 2. Update Calendar Interaction (`main.dart`)
+- **Action**: When a user taps an empty slot on the calendar, instead of opening an intermediate sidebar on the right, it will navigate directly to the `IntegratedCreateMatchScreen`.
+- **Pre-fill**: The date and time of the tapped slot will be passed directly into the Match Creation form.
+
+### 3. Create `IntegratedCreateMatchScreen`
+- **Layout**: A two-column layout (on wide screens/web) or scrollable stack (on mobile).
+    - **Left Side (Form)**: Location search, Date, Start/End times, Match Size, Min NTRP.
+    - **Right Side (LOV of Players)**: A dynamic list of players.
+- **Dynamic Reactivity**: 
+    - **Availability**: As you interact with the *Date and Time* fields on the left, the LOV on the right will instantly regroup players into "Available", "Away", or "Unknown" based on their weekly preferences.
+    - **Distance**: As you enter the *Court Location* on the left, the LOV on the right will extract the zip code from the location and immediately calculate and display each player's distance from the court.
+    - **NTRP/Circle Filters**: The LOV will respect the match's Min NTRP requirement and offer inline Circle filtering.
+- **Action**: Tapping players in the right LOV adds them to the match's roster. Tapping "Confirm & Post Match" at the bottom of the form finalizes the creation and sends invites.
+
+### 4. Remove Redundant UI
+- We will replace `SelectPlayersScreen` invocations in the Create Match flow with this new combined logic, drastically reducing the number of clicks required to host a match.

@@ -40,44 +40,45 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
   }
 
   /// Auto-assignment algorithm:
-  /// Sort roster ascending by playedSlots/paidSlots (ties by displayName).
-  /// Fill court spots (spotsPerSession) with 'available' players first,
-  /// remainder → 'reserve'; unavailable/no-response → 'out'.
+  /// Players who responded 'available' are sorted ascending by played% (playedSlots/paidSlots).
+  /// The first spotsPerSession → 'confirmed' (Lineup); remaining available → 'reserve'.
+  /// Players who responded 'backup' → 'reserve'.
+  /// Everyone else (unavailable or no response) → 'out'.
   Map<String, String> _autoAssign() {
     final spots = widget.contract.spotsPerSession;
-    final roster = List<ContractPlayer>.from(widget.contract.roster);
+    final roster = widget.contract.roster;
 
-    roster.sort((a, b) {
-      final aOldAtten = widget.session.attendance[a.uid];
-      final aPlayedBefore = (aOldAtten == 'played' || aOldAtten == 'charged') ? (a.playedSlots - 1).clamp(0, 999) : a.playedSlots;
-      final pctA = a.paidSlots > 0 ? aPlayedBefore / a.paidSlots : 0.0;
+    final available = roster
+        .where((p) => widget.session.availability[p.uid] == 'available')
+        .toList();
+    final backup = roster
+        .where((p) => widget.session.availability[p.uid] == 'backup')
+        .toList();
+    final other = roster
+        .where((p) {
+          final avail = widget.session.availability[p.uid];
+          return avail != 'available' && avail != 'backup';
+        })
+        .toList();
 
-      final bOldAtten = widget.session.attendance[b.uid];
-      final bPlayedBefore = (bOldAtten == 'played' || bOldAtten == 'charged') ? (b.playedSlots - 1).clamp(0, 999) : b.playedSlots;
-      final pctB = b.paidSlots > 0 ? bPlayedBefore / b.paidSlots : 0.0;
-
+    // Sort available players: lowest played% first, then alphabetically
+    available.sort((a, b) {
+      final pctA = a.paidSlots > 0 ? a.playedSlots / a.paidSlots : 0.0;
+      final pctB = b.paidSlots > 0 ? b.playedSlots / b.paidSlots : 0.0;
       final cmp = pctA.compareTo(pctB);
       return cmp != 0 ? cmp : a.displayName.compareTo(b.displayName);
     });
 
     final result = <String, String>{};
-    int confirmedCount = 0;
 
-    for (final player in roster) {
-      final avail = widget.session.availability[player.uid];
-      final atten = widget.session.attendance[player.uid];
-
-      final isAvail = avail == 'available' || avail == 'played' || atten == 'available' || atten == 'played' || atten == 'reserve';
-      final isBackup = avail == 'backup' || atten == 'backup';
-
-      if (isAvail && confirmedCount < spots) {
-        result[player.uid] = 'confirmed';
-        confirmedCount++;
-      } else if (isAvail || isBackup) {
-        result[player.uid] = 'reserve';
-      } else {
-        result[player.uid] = 'out';
-      }
+    for (int i = 0; i < available.length; i++) {
+      result[available[i].uid] = i < spots ? 'confirmed' : 'reserve';
+    }
+    for (final p in backup) {
+      result[p.uid] = 'reserve';
+    }
+    for (final p in other) {
+      result[p.uid] = 'out';
     }
 
     return result;

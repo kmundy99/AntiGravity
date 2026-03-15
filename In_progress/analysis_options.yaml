@@ -1,0 +1,38 @@
+# Distance Based Filtering Walkthrough
+
+I have implemented the advanced distance filtering based on zip codes, ensuring the system can fall back to general city-level coordinates for players without full addresses, thus preserving privacy while still enabling useful geographic filters.
+
+## Core Implementations
+
+1.  **Offline Location Maps (`assets/us_zip_codes.json` & `LocationService`)**
+    *   Added a new `LocationService` (singleton instance) in `lib/services/location_service.dart`.
+    *   This service loads a JSON asset file containing zip codes mapped to predefined latitudes and longitudes. 
+    *   It uses the Haversine formula to compute the straight-line distance (in miles) between any two valid US zip codes.
+    *   **Note**: I've created a dummy `us_zip_codes.json` file so that you can run the app immediately. Once you download your full zip-code mapping file, you can just replace this asset file. The application is written dynamically to accept whatever size mapping you provide it.
+
+2.  **User Preferences**
+    *   Added `defaultDistanceFilter` to the `User` model, stored in Firestore. It defaults to 10.0 miles.
+    *   This ensures the user's distance preference is preserved between sessions.
+
+3.  **Mandatory Zip Code Capture**
+    *   Added logic in the `CompleteProfileScreen` and the `HomeScreen` profile editor to ensure that any entered address contains a valid 5-digit US zip code. The form will reject execution and show an error if a user supplies an address without an interpretable zip code.
+
+## UI Filtering Additions
+
+### 1. `PlayersDirectoryScreen` Updates
+*   Users can now filter the directory based on a "Max Distance" dropdown (3, 5, 10, 15, 20, 30 miles, or Any).
+*   The system uses the logged-in user's mapped zip code as the base coordinate.
+*   The filter dropdown only appears if the logged-in user has provided a valid zip code.
+*   Player cards now display `X miles away` based on the difference between the logged in user's home and the remote user's home.
+
+### 2. `SelectPlayersScreen` Updates
+*   Added `targetLocation` capability. When organizing a contract or match, the target distance base calculation uses the specific court/club location instead of the organizer's home location.
+*   Added maximum distance dropdowns and Minimum NTRP dropdowns to the player recruitment filter bar.
+*   Cards now display `X miles from court`.
+
+## Validation & Correctness
+
+1.  **Unit Tests**: Created `test/services/location_service_test.dart` to verify that the regex accurately strips valid zip codes from complex address strings, and that general mapping and distance calculation logic executes without throwing.
+2.  **Lint Status**: Verified through `flutter analyze` that all edits type-checked correctly across models, UI screens, and core services.
+
+*(There are no visual changes requested right now since I can't launch chrome to take UI screenshots with these changes, however they follow standard styling from existing filter elements).*

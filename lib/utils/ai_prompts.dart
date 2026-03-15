@@ -15,7 +15,7 @@ LOGGING IN:
 COMPLETING YOUR PROFILE:
 - Tap the gear icon (⚙️) in the top-right corner to edit your profile at any time.
 - If your account is provisional, you'll also see an orange "Complete Profile" button.
-- Profile fields: Display Name (required), Zip Code, Email, Phone, Gender, NTRP Level.
+- Profile fields: Display Name (required), Zip Code (required for distance features), Email, Phone, Gender, NTRP Level.
 - You can toggle match notifications on/off. Notifications are sent by email.
 
 LOGGING OUT:
@@ -85,7 +85,7 @@ CIRCLES (Private Grouping):
 OTHER FILTERS:
 - Search by name
 - Filter by minimum NTRP level
-- Filter by location
+- Filter by maximum distance (Requires a valid zip code on your profile. Calculates distance from your home to theirs).
 
 ADD CUSTOM PLAYER:
 - Tap "Add Custom Player" to invite someone who isn't in the app yet.
@@ -106,7 +106,7 @@ CREATING A MATCH (Hosting)
 - From the Calendar tab, tap any empty time slot → "Create Match," OR use the green "+" button.
 - Set the court location (with address search/autocomplete), date, start time, and end time.
 - Set minimum NTRP level and maximum number of players (2, 3, 4, or 6).
-- Add players from the directory (you can filter by circle or NTRP level when selecting).
+- Add players from the directory (you can filter by circle, NTRP level, or distance from the match court when selecting).
 - Tap "Confirm & Post Match" to save. All selected players will be notified by email.
 
 ═══════════════════════════════════════════════════════════════
@@ -167,6 +167,9 @@ A: Your profile is permanently removed, you're removed from all match rosters, a
 
 Q: The app says "We've hit our email limit." What does that mean?
 A: The app uses a third-party email service with a monthly sending cap. If the limit is reached, email notifications pause until the next billing cycle. You can still use the app and Match Chat normally.
+
+Q: Why don't I see the distance filter or player distances?
+A: You must enter a valid 5-digit US zip code in your profile for distance features to work. Once entered, you can filter players by distance and see how far away they are from your home (or from a court when organizing a match).
 
 ═══════════════════════════════════════════════════════════════
 PLAYER AVAILABILITY SETTINGS

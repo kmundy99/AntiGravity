@@ -383,6 +383,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                         alreadyInRosterUids: _match!.roster
                             .map((r) => r.uid)
                             .toList(),
+                        targetLocation: _match!.location,
                       ),
                     ),
                   );
