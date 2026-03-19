@@ -43,6 +43,8 @@ dependencies:
   http: ^1.6.0
   syncfusion_flutter_calendar: ^32.2.5
   pinput: ^4.0.0
+  firebase_auth: ^6.2.0
+  app_links: ^7.0.0
 
 dev_dependencies:
   flutter_test:

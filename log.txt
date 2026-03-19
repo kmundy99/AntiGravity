@@ -1,0 +1,96 @@
+commit ecc76a41c2eaf0af7123e146ead00f05d1291da3
+Author: Kiran Mundy <kiran.mundy@gmail.com>
+Date:   Sun Mar 15 09:56:04 2026 -0400
+
+    Fixed Lineup bug
+
+diff --git a/lib/main.dart b/lib/main.dart
+index 6ff5761..c791975 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -29,9 +29,13 @@ import 'utils/availability_utils.dart';
+ import 'package:syncfusion_flutter_calendar/calendar.dart';
+ import 'widgets/weekly_availability_matrix.dart';
+ 
++import 'services/location_service.dart';
++import 'screens/integrated_create_match_screen.dart';
++
+ void main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
++  await LocationService().loadZipData();
+   runApp(const TennisApp());
+ }
+ 
+@@ -502,6 +506,21 @@ class _HomeScreenState extends State<HomeScreen> {
+   void _saveProfile() async {
+     if (_myUid == null) return;
+ 
++    if (!_isQuickSetup) {
++      final addressText = _addressCtrl.text.trim();
++      if (addressText.isNotEmpty) {
++        final extractedZip = LocationService().extractZipCode(addressText);
++        if (extractedZip == null) {
++          if (mounted) {
++            ScaffoldMessenger.of(context).showSnackBar(
++              const SnackBar(content: Text('Please enter a valid 5-digit zip code.')),
++            );
++          }
++          return;
++        }
++      }
++    }
++
+     final contactValue = _user?.primaryContact ?? _phoneCtrl.text.trim();
+ 
+     final newUser = User(
+@@ -1269,21 +1288,14 @@ class _HomeScreenState extends State<HomeScreen> {
+                       if (chosenSlot.isAfter(
+                         DateTime.now().subtract(const Duration(hours: 1)),
+                       )) {
+-                        setState(() {
+-                          final isSameSlot =
+-                              _selectedSlot != null &&
+-                              _selectedSlot!.year == chosenSlot.year &&
+-                              _selectedSlot!.month == chosenSlot.month &&
+-                              _selectedSlot!.day == chosenSlot.day &&
+-                              _selectedSlot!.hour == chosenSlot.hour;
+-                          if (isSameSlot) {
+-                            _selectedSlot = null;
+-                            _selectedPlayerUids = {};
+-                          } else {
+-                            _selectedSlot = chosenSlot;
+-                            _selectedPlayerUids = {};
+-                          }
+-                        });
++                        Navigator.push(
++                          context,
++                          MaterialPageRoute(
++                            builder: (context) => IntegratedCreateMatchScreen(
++                              prefillDate: chosenSlot,
++                            ),
++                          ),
++                        );
+                       }
+                     }
+                   },
+
+commit 2945de86b2666bd279033135dd552e9ebb32c122
+Author: Kiran Mundy <kiran.mundy@gmail.com>
+Date:   Wed Mar 11 22:21:20 2026 -0400
+
+    added adhoc-local.com domain
+
+diff --git a/lib/main.dart b/lib/main.dart
+index 1ffcbc8..6ff5761 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -1925,7 +1925,7 @@ class _HomeScreenState extends State<HomeScreen> {
+                           builder: (ctx) => AlertDialog(
+                             title: const Text("About Adhoc Local"),
+                             content: const Text(
+-                              "Adhoc Local is a community-driven tool designed to simplify tennis match organization in Lexington, MA. We focus on reducing the friction of invites and scheduling so you can spend more time on the court. Currently in private beta on finapps.com.",
++                              "Adhoc Local is a community-driven tool designed to simplify tennis match organization in Lexington, MA. We focus on reducing the friction of invites and scheduling so you can spend more time on the court. Currently in private beta on adhoc-local.com.",
+                             ),
+                             actions: [
+                               TextButton(

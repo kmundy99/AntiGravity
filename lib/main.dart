@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide User;
+import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'firebase_options.dart';
 import 'create_match.dart';
@@ -215,6 +217,10 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<QuerySnapshot>? _usersSub;
   late _MeetingDataSource _calendarDataSource;
 
+  // App Links State for Email Auth
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
   // Contract calendar state
   final _firebaseService = FirebaseService();
   List<Contract> _playerContracts = [];
@@ -227,6 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _initAppLinks();
     _calendarDataSource = _MeetingDataSource(<Appointment>[]);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _feedbackBtnOffset == null) {
@@ -276,8 +283,83 @@ class _HomeScreenState extends State<HomeScreen> {
         });
   }
 
+  Future<void> _initAppLinks() async {
+    _appLinks = AppLinks();
+    try {
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null) {
+        _handleLink(initialLink);
+      }
+    } catch (e) {
+      // Ignored
+    }
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleLink(uri);
+    });
+  }
+
+  Future<void> _handleLink(Uri uri) async {
+    final link = uri.toString();
+    if (FirebaseAuth.instance.isSignInWithEmailLink(link)) {
+      final prefs = await SharedPreferences.getInstance();
+      final email = prefs.getString('emailForSignIn') ?? '';
+      if (email.isEmpty) {
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Please enter your email again on the login screen, then click the link.')),
+           );
+        }
+        return;
+      }
+      try {
+        final userCredential = await FirebaseAuth.instance.signInWithEmailLink(
+          email: email,
+          emailLink: link,
+        );
+        final authUid = userCredential.user!.uid;
+
+        // Link the Firebase Auth user to an existing or new database user
+        String? uid = await _resolveContactToUid(email);
+        if (uid == null) {
+           final newDocRef = FirebaseFirestore.instance.collection('users').doc();
+           await newDocRef.set({
+             'display_name': '',
+             'primary_contact': email,
+             'email': email,
+             'accountStatus': 'provisional',
+             'role': 'player',
+             'createdAt': FieldValue.serverTimestamp(),
+             'auth_uids': FieldValue.arrayUnion([authUid]),
+           });
+           uid = newDocRef.id;
+        } else {
+           await FirebaseFirestore.instance.collection('users').doc(uid).set({
+             'auth_uids': FieldValue.arrayUnion([authUid]),
+           }, SetOptions(merge: true));
+        }
+
+        await prefs.setString('user_uid', uid);
+        await prefs.setString('user_login_contact', email);
+        _loadUser();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Successfully authenticated!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('Error signing in. Please request a new link.')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _linkSubscription?.cancel();
     _matchesSub?.cancel();
     _usersSub?.cancel();
     _playerContractsSub?.cancel();
@@ -1816,91 +1898,46 @@ class _HomeScreenState extends State<HomeScreen> {
                       ElevatedButton(
                         onPressed: () async {
                           if (_phoneCtrl.text.trim().isEmpty) return;
-
+                          
                           String loginId = _phoneCtrl.text.trim();
-
-                          if (loginId.contains('@')) {
-                            loginId = loginId.toLowerCase();
-                          } else {
-                            loginId = loginId
-                                .replaceAll(RegExp(r'[^\d]'), '')
-                                .replaceFirst(RegExp(r'^1'), '');
-                            if (loginId.isEmpty) return;
+                          
+                          if (!loginId.contains('@')) {
+                            if (mounted) {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 const SnackBar(content: Text('Please enter a valid email address to receive your login link.')),
+                               );
+                            }
+                            return;
                           }
+                          loginId = loginId.toLowerCase();
 
                           final prefs = await SharedPreferences.getInstance();
 
-                          // OFFLINE-SAFE: If we previously logged in with this same
-                          // contact and have a cached UID, reuse it without querying
-                          // Firestore. This prevents stale-cache cross-user bugs.
-                          final cachedContact = prefs.getString(
-                            'user_login_contact',
-                          );
-                          final cachedUid = prefs.getString('user_uid');
-                          if (cachedContact == loginId &&
-                              cachedUid != null &&
-                              cachedUid.isNotEmpty) {
-                            _loadUser();
-                            return;
-                          }
-
-                          // Resolve contact → UUID (requires Firestore / network)
-                          String? uid;
+                          // Send Email Link
+                          final url = Uri.base.toString().split('?').first; 
+                          
                           try {
-                            uid = await _resolveContactToUid(loginId);
+                            await FirebaseAuth.instance.sendSignInLinkToEmail(
+                              email: loginId,
+                              actionCodeSettings: ActionCodeSettings(
+                                url: url, 
+                                handleCodeInApp: true,
+                              ),
+                            );
+                            await prefs.setString('emailForSignIn', loginId);
+                            
+                            if (mounted) {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 const SnackBar(content: Text('Login link sent! Please check your email to continue.')),
+                               );
+                            }
                           } catch (e) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Unable to log in — please check your internet connection and try again.',
-                                  ),
-                                ),
-                              );
-                            }
-                            return;
-                          }
-
-                          if (uid == null) {
-                            // New user — create a doc with auto-generated UUID
-                            // This also requires network; show error if it fails.
-                            try {
-                              final newDocRef = FirebaseFirestore.instance
-                                  .collection('users')
-                                  .doc(); // auto-ID
-
-                              await newDocRef.set({
-                                'display_name': '',
-                                'primary_contact': loginId,
-                                if (loginId.contains('@'))
-                                  'email': loginId
-                                else
-                                  'phone_number': loginId,
-                                'accountStatus': 'provisional',
-                                'role': 'player',
-                                'createdAt': FieldValue.serverTimestamp(),
-                              });
-
-                              uid = newDocRef.id;
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Unable to create account — please check your internet connection.',
-                                    ),
-                                  ),
-                                );
-                              }
-                              return;
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(content: Text('Error sending link: $e')),
+                               );
                             }
                           }
-
-                          // Cache BOTH the UID and the contact used to resolve it.
-                          // On future logins with the same contact, we skip Firestore.
-                          await prefs.setString('user_uid', uid);
-                          await prefs.setString('user_login_contact', loginId);
-                          _loadUser();
                         },
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(50),
