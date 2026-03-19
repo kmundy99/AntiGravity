@@ -305,6 +305,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       position: RelativeRect.fromLTRB(pos.dx, pos.dy + _rowHeight, pos.dx + _sessionColWidth, pos.dy + _rowHeight * 2),
       items: [
         const PopupMenuItem(value: 'available', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Available')])),
+        const PopupMenuItem(value: 'played', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Played')])),
         const PopupMenuItem(value: 'reserve', child: Row(children: [_ColorDot(Colors.amber), SizedBox(width: 8), Text('Reserve')])),
         const PopupMenuItem(value: 'out', child: Row(children: [_ColorDot(Colors.grey), SizedBox(width: 8), Text('Out')])),
         const PopupMenuItem(value: 'charged', child: Row(children: [_ColorDot(Colors.red), SizedBox(width: 8), Text('Charged')])),
