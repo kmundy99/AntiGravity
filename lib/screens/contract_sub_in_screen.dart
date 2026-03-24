@@ -30,7 +30,7 @@ class ContractSubInScreen extends StatelessWidget {
     ContractSession session,
   ) async {
     final updated = session.copyWith(
-      assignment: {...session.assignment, playerUid: 'confirmed'},
+      assignment: {...session.assignment, playerUid: <String, dynamic>{'status': 'confirmed'}},
     );
     await firebase.upsertSession(contractId, updated);
 
@@ -109,12 +109,11 @@ class ContractSubInScreen extends StatelessWidget {
     final endStr = _formatTime(contract.endMinutes);
     final dayStr = DateFormat('EEEE, MMMM d').format(sessionDt);
 
-    final assignment = session?.assignment ?? {};
-    final myStatus = assignment[playerUid];
+    final myStatus = session?.assignmentStatus(playerUid);
     final spotsPerSession = contract.spotsPerSession;
 
     final confirmed = contract.roster
-        .where((p) => assignment[p.uid] == 'confirmed')
+        .where((p) => session?.assignmentStatus(p.uid) == 'confirmed')
         .toList();
     final confirmedCount = confirmed.length;
     final isFull = confirmedCount >= spotsPerSession;

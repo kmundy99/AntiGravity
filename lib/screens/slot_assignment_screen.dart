@@ -26,14 +26,17 @@ class SlotAssignmentScreen extends StatefulWidget {
 
 class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
   final _firebase = FirebaseService();
-  late Map<String, String> _assignment;
+  // Internal state matches the Firestore format: uid → { 'status': '...', 'line'?: int }.
+  late Map<String, Map<String, dynamic>> _assignment;
 
   @override
   void initState() {
     super.initState();
     // If a draft/published assignment already exists, load it; otherwise auto-compute.
     if (widget.session.assignment.isNotEmpty) {
-      _assignment = Map<String, String>.from(widget.session.assignment);
+      _assignment = widget.session.assignment.map(
+        (uid, v) => MapEntry(uid, Map<String, dynamic>.from(v)),
+      );
     } else {
       _assignment = _autoAssign();
     }
@@ -44,7 +47,7 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
   /// The first spotsPerSession → 'confirmed' (Lineup); remaining available → 'reserve'.
   /// Players who responded 'backup' → 'reserve'.
   /// Everyone else (unavailable or no response) → 'out'.
-  Map<String, String> _autoAssign() {
+  Map<String, Map<String, dynamic>> _autoAssign() {
     final spots = widget.contract.spotsPerSession;
     final roster = widget.contract.roster;
 
@@ -69,23 +72,23 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
       return cmp != 0 ? cmp : a.displayName.compareTo(b.displayName);
     });
 
-    final result = <String, String>{};
+    final result = <String, Map<String, dynamic>>{};
 
     for (int i = 0; i < available.length; i++) {
-      result[available[i].uid] = i < spots ? 'confirmed' : 'reserve';
+      result[available[i].uid] = {'status': i < spots ? 'confirmed' : 'reserve'};
     }
     for (final p in backup) {
-      result[p.uid] = 'reserve';
+      result[p.uid] = {'status': 'reserve'};
     }
     for (final p in other) {
-      result[p.uid] = 'out';
+      result[p.uid] = {'status': 'out'};
     }
 
     return result;
   }
 
   int get _confirmedCount =>
-      _assignment.values.where((v) => v == 'confirmed').length;
+      _assignment.values.where((v) => v['status'] == 'confirmed').length;
 
   Future<void> _saveDraft() async {
     await _firebase.upsertSession(
@@ -106,7 +109,7 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
   Future<void> _publishLineup() async {
     final session = widget.session;
     final contract = widget.contract;
-    final assignmentSnapshot = Map<String, String>.from(_assignment);
+    final assignmentSnapshot = Map<String, Map<String, dynamic>>.from(_assignment);
 
     final config = ComposeMessageConfig(
       organizerUid: widget.currentUserUid,
@@ -127,8 +130,9 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
         bool rosterChanged = false;
 
         for (final e in assignmentSnapshot.entries) {
+          final statusVal = e.value['status'] as String? ?? 'out';
           final oldAtten = session.attendance[e.key];
-          if (e.value == 'confirmed') {
+          if (statusVal == 'confirmed') {
             updatedAttendance[e.key] = 'played';
             if (oldAtten != 'played' && oldAtten != 'charged') {
               final idx = updatedRoster.indexWhere((p) => p.uid == e.key);
@@ -137,7 +141,7 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
                 rosterChanged = true;
               }
             }
-          } else if (e.value == 'reserve') {
+          } else if (statusVal == 'reserve') {
             updatedAttendance[e.key] = 'reserve';
             if (oldAtten == 'played' || oldAtten == 'charged') {
               final idx = updatedRoster.indexWhere((p) => p.uid == e.key);
@@ -257,6 +261,7 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
   }
 
   Widget _buildColumnHeader() {
+    final isCompetitive = widget.contract.lineupMode == 'competitive';
     return Container(
       color: Colors.grey.shade100,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -266,31 +271,47 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
           SizedBox(width: 48, child: Text('Played%', style: TextStyle(fontSize: 10, color: Colors.blueGrey, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
           SizedBox(width: 36, child: Text('Avail', style: TextStyle(fontSize: 10, color: Colors.blueGrey, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
           SizedBox(width: 110, child: Text('Assignment', style: TextStyle(fontSize: 10, color: Colors.blueGrey, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+          if (isCompetitive)
+            SizedBox(width: 48, child: Text('Line', style: TextStyle(fontSize: 10, color: Colors.blueGrey, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
         ],
       ),
     );
   }
 
   Widget _buildPlayerRow(ContractPlayer player) {
+    final isCompetitive = widget.contract.lineupMode == 'competitive';
     final avail = widget.session.availability[player.uid];
-    final current = _assignment[player.uid] ?? 'out';
+    final entry = _assignment[player.uid] ?? {'status': 'out'};
+    final currentStatus = entry['status'] as String? ?? 'out';
+    final currentLine = entry['line'] as int?;
     final pct = player.paidSlots > 0
         ? '${(player.playedSlots / player.paidSlots * 100).round()}%'
         : '—';
 
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              player.displayName,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  player.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
+                if (player.powerRating != null)
+                  Text(
+                    'PR: ${player.powerRating!.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 10, color: Colors.blueGrey.shade400),
+                  ),
+              ],
             ),
           ),
           SizedBox(
@@ -304,12 +325,36 @@ class _SlotAssignmentScreenState extends State<SlotAssignmentScreen> {
           SizedBox(
             width: 110,
             child: _AssignmentChip(
-              value: current,
+              value: currentStatus,
               onChanged: (newVal) {
-                if (newVal != null) setState(() => _assignment[player.uid] = newVal);
+                if (newVal == null) return;
+                setState(() {
+                  final line = isCompetitive && newVal == 'confirmed' ? currentLine : null;
+                  _assignment[player.uid] = {
+                    'status': newVal,
+                    if (line != null) 'line': line,
+                  };
+                });
               },
             ),
           ),
+          if (isCompetitive)
+            SizedBox(
+              width: 48,
+              child: currentStatus == 'confirmed'
+                  ? _LineChip(
+                      line: currentLine,
+                      onChanged: (line) {
+                        setState(() {
+                          _assignment[player.uid] = {
+                            'status': 'confirmed',
+                            if (line != null) 'line': line,
+                          };
+                        });
+                      },
+                    )
+                  : const SizedBox(),
+            ),
         ],
       ),
     );
@@ -358,6 +403,58 @@ class _AvailIcon extends StatelessWidget {
       default:
         return Text('—', style: TextStyle(fontSize: 13, color: Colors.grey.shade400));
     }
+  }
+}
+
+/// Tappable chip for picking a line number (1–4) in competitive mode.
+class _LineChip extends StatelessWidget {
+  final int? line;
+  final ValueChanged<int?> onChanged;
+
+  const _LineChip({required this.line, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        final RenderBox box = context.findRenderObject() as RenderBox;
+        final offset = box.localToGlobal(Offset.zero);
+        final result = await showMenu<int?>(
+          context: context,
+          position: RelativeRect.fromLTRB(
+            offset.dx,
+            offset.dy + box.size.height,
+            offset.dx + box.size.width,
+            offset.dy + box.size.height + 200,
+          ),
+          items: const [
+            PopupMenuItem(value: 1, child: Text('Line 1')),
+            PopupMenuItem(value: 2, child: Text('Line 2')),
+            PopupMenuItem(value: 3, child: Text('Line 3')),
+            PopupMenuItem(value: 4, child: Text('Line 4')),
+            PopupMenuItem(value: null, child: Text('No line')),
+          ],
+        );
+        onChanged(result);
+      },
+      child: Container(
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: line != null ? Colors.indigo.shade100 : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          line != null ? 'L$line' : 'L?',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: line != null ? Colors.indigo.shade800 : Colors.grey.shade600,
+          ),
+        ),
+      ),
+    );
   }
 }
 

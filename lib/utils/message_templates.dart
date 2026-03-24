@@ -230,9 +230,9 @@ class MessageTemplates {
     }
 
     final timeStr = fmtTime(contract.startMinutes);
-    final confirmed = roster.where((p) => assignment[p.uid] == 'confirmed').toList();
-    final reserves = roster.where((p) => assignment[p.uid] == 'reserve').toList();
-    final out = roster.where((p) => assignment[p.uid] == 'out').toList();
+    final confirmed = roster.where((p) => assignment[p.uid]?['status'] == 'confirmed').toList();
+    final reserves = roster.where((p) => assignment[p.uid]?['status'] == 'reserve').toList();
+    final out = roster.where((p) => assignment[p.uid]?['status'] == 'out').toList();
 
     final buf = StringBuffer();
     buf.writeln("Hi {playerName}, here's the lineup for ${contract.clubName} on $dayStr ($timeStr):");

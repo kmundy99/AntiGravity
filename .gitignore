@@ -11,3 +11,26 @@ ios/Runner/GoogleService-Info.plist
 .env
 *.deb
 *.pkg
+
+# Large context dump / upload bundles — never commit these
+*.zip
+*.rar
+*.tar.gz
+*.tar.bz2
+
+# Python virtual environments and bytecode
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Scraper: local dev artifacts
+scraper/*.html
+scraper/check*.py
+scraper/test_opp.py
+
+# Service account keys
+ServiceAccountKey.json
+*ServiceAccount*.json

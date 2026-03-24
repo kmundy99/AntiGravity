@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models.dart';
 import '../services/firebase_service.dart';
 import 'compose_message_screen.dart';
@@ -44,12 +45,13 @@ class ContractSessionGridLoaderScreen extends StatelessWidget {
 
 
 // Column widths for the fixed stats panel (total: 300px)
-const double _colName = 160;
+const double _colName = 140;
+const double _colPR = 50;
 const double _colPaid = 35;
 const double _colPlayed = 45;
 const double _colPct = 45;
 const double _colLeft = 35;
-const double _statsWidth = _colName + _colPaid + _colPlayed + _colPct + _colLeft; // 320
+const double _statsWidth = _colName + _colPaid + _colPlayed + _colPct + _colLeft; // 300
 
 // Width of each session column
 const double _sessionColWidth = 48;
@@ -78,6 +80,16 @@ class ContractSessionGridScreen extends StatefulWidget {
 
 class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   final _firebase = FirebaseService();
+  final Set<String> _fetchingRatings = {};
+  final Map<String, double> _powerRatings = {};
+  DateTime? _ratingsUpdatedAt;
+
+  bool get _isTeam => widget.contract.contractType == 'team';
+  // In team mode: Player + Rating + Played columns.
+  double get _activeStatsWidth =>
+      _isTeam ? _colName + _colPR + _colPlayed : _statsWidth;
+  // Team headers need more room: date + opponent + time + location + H/A badge.
+  double get _activeHeaderHeight => _isTeam ? 110.0 : _headerHeight;
 
   // Two separate vertical controllers, kept in sync, so EITHER panel can scroll
   final _statsVScroll = ScrollController();
@@ -92,6 +104,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   // pointer positions into (row, col) cell indices.
   final _sessionPanelKey = GlobalKey();
   bool _quickFillMode = false;
+  bool _isRefreshingRatings = false;
   String? _dragPaintState;  // state applied to every cell touched in this drag
   int?    _lastDragRow;     // last row painted — skip re-painting same cell
   int?    _lastDragCol;
@@ -126,7 +139,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     if (box == null) return null;
     final origin = box.localToGlobal(Offset.zero);
     final relX = globalPos.dx - origin.dx + _hScrollController.offset;
-    final relY = globalPos.dy - origin.dy - _headerHeight + _sessionVScroll.offset;
+    final relY = globalPos.dy - origin.dy - _activeHeaderHeight + _sessionVScroll.offset;
     if (relX < 0 || relY < 0) return null;
     final col = relX ~/ _sessionColWidth;
     final row = relY ~/ _rowHeight;
@@ -210,6 +223,22 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
 
+  static String _fmtMinsShort(int m) {
+    final h = m ~/ 60;
+    final min = m % 60;
+    final suffix = h < 12 ? 'a' : 'p';
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    return min == 0 ? '$h12$suffix' : '$h12:${min.toString().padLeft(2,'0')}$suffix';
+  }
+
+  static String _fmtMinsFull(int m) {
+    final h = m ~/ 60;
+    final min = m % 60;
+    final suffix = h < 12 ? 'AM' : 'PM';
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    return '$h12:${min.toString().padLeft(2, '0')} $suffix';
+  }
+
   int _playedCount(String uid, List<ContractSession> sessions) => sessions
       .where((s) => s.attendance[uid] == 'played' || s.attendance[uid] == 'charged')
       .length;
@@ -289,6 +318,9 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     required DateTime sessionDate,
     required List<ContractSession> sessions,
   }) async {
+    final isTeam = _isTeam;
+    final lineCount = widget.contract.courtsCount; // for team = number of lines
+
     final key = _dateKey(sessionDate);
     final existing = sessions.firstWhere(
       (s) => s.id == key,
@@ -296,29 +328,92 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     );
     final currentState = existing.attendance[uid];
 
-    // Show context menu at the tap position
     final RenderBox box = cellContext.findRenderObject() as RenderBox;
     final Offset pos = box.localToGlobal(Offset.zero);
 
     final result = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(pos.dx, pos.dy + _rowHeight, pos.dx + _sessionColWidth, pos.dy + _rowHeight * 2),
+      position: RelativeRect.fromLTRB(
+          pos.dx, pos.dy + _rowHeight, pos.dx + _sessionColWidth, pos.dy + _rowHeight * 2),
       items: [
-        const PopupMenuItem(value: 'available', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Available')])),
-        const PopupMenuItem(value: 'played', child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Played')])),
-        const PopupMenuItem(value: 'reserve', child: Row(children: [_ColorDot(Colors.amber), SizedBox(width: 8), Text('Reserve')])),
-        const PopupMenuItem(value: 'out', child: Row(children: [_ColorDot(Colors.grey), SizedBox(width: 8), Text('Out')])),
-        const PopupMenuItem(value: 'charged', child: Row(children: [_ColorDot(Colors.red), SizedBox(width: 8), Text('Charged')])),
-        if (currentState != null) const PopupMenuItem(value: 'clear', child: Row(children: [_ColorDot(Colors.white, bordered: true), SizedBox(width: 8), Text('Clear')])),
+        const PopupMenuItem(
+            value: 'available',
+            child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Available')])),
+        // Team mode: Line 1–N instead of generic Played
+        if (isTeam)
+          ...List.generate(
+            lineCount,
+            (i) => PopupMenuItem(
+              value: 'line:${i + 1}',
+              child: Row(children: [
+                _ColorDot(Colors.indigo.shade400),
+                const SizedBox(width: 8),
+                Text('Line ${i + 1}'),
+              ]),
+            ),
+          )
+        else
+          const PopupMenuItem(
+              value: 'played',
+              child: Row(children: [_ColorDot(Colors.green), SizedBox(width: 8), Text('Played')])),
+        const PopupMenuItem(
+            value: 'reserve',
+            child: Row(children: [_ColorDot(Colors.amber), SizedBox(width: 8), Text('Reserve')])),
+        const PopupMenuItem(
+            value: 'out',
+            child: Row(children: [_ColorDot(Colors.grey), SizedBox(width: 8), Text('Out')])),
+        // Charged only for seasonal contracts
+        if (!isTeam)
+          const PopupMenuItem(
+              value: 'charged',
+              child: Row(children: [_ColorDot(Colors.red), SizedBox(width: 8), Text('Charged')])),
+        if (currentState != null)
+          const PopupMenuItem(
+              value: 'clear',
+              child: Row(children: [_ColorDot(Colors.white, bordered: true), SizedBox(width: 8), Text('Clear')])),
       ],
     );
 
     if (result == null || !mounted) return;
-    await _applyAttendanceChange(
-      uid: uid,
-      sessionDate: sessionDate,
-      sessions: sessions,
-      newState: result,
+
+    if (result.startsWith('line:')) {
+      final line = int.parse(result.substring(5));
+      await _applyLineAssignment(
+          uid: uid, sessionDate: sessionDate, sessions: sessions, line: line);
+    } else {
+      await _applyAttendanceChange(
+          uid: uid, sessionDate: sessionDate, sessions: sessions, newState: result);
+    }
+  }
+
+  /// Writes attendance='played' AND assignment={status:confirmed, line:X} atomically.
+  Future<void> _applyLineAssignment({
+    required String uid,
+    required DateTime sessionDate,
+    required List<ContractSession> sessions,
+    required int line,
+  }) async {
+    final key = _dateKey(sessionDate);
+    final existing = sessions.firstWhere(
+      (s) => s.id == key,
+      orElse: () => ContractSession(id: key, date: sessionDate, attendance: {}),
+    );
+
+    final updatedAttendance = Map<String, String>.from(existing.attendance)
+      ..[uid] = 'played';
+    final updatedAssignment = Map<String, Map<String, dynamic>>.from(existing.assignment)
+      ..[uid] = {'status': 'confirmed', 'line': line};
+    // If there was no prior assignment state, promote to draft so it shows in the grid
+    final newAssignmentState =
+        existing.assignmentState == 'none' ? 'draft' : existing.assignmentState;
+
+    await _firebase.upsertSession(
+      widget.contract.id,
+      existing.copyWith(
+        attendance: updatedAttendance,
+        assignment: updatedAssignment,
+        assignmentState: newAssignmentState,
+      ),
     );
   }
 
@@ -337,6 +432,32 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       if (_statsVScroll.hasClients) _statsVScroll.jumpTo(_sessionVScroll.offset);
       _vSyncing = false;
     });
+    _hydrateRatings();
+  }
+
+  void _hydrateRatings() {
+    final missing = widget.contract.roster
+        .where((p) =>
+            p.powerRating == null &&
+            !_powerRatings.containsKey(p.uid) &&
+            !_fetchingRatings.contains(p.uid))
+        .map((p) => p.uid)
+        .toList();
+    if (missing.isEmpty) return;
+    _fetchingRatings.addAll(missing);
+    Future.wait([
+      _firebase.fetchPowerRatings(missing),
+      _firebase.fetchRatingsUpdatedAt(missing),
+    ]).then((results) {
+      if (!mounted) return;
+      setState(() {
+        _powerRatings.addAll(results[0] as Map<String, double>);
+        final ts = results[1] as DateTime?;
+        if (ts != null && (_ratingsUpdatedAt == null || ts.isAfter(_ratingsUpdatedAt!))) {
+          _ratingsUpdatedAt = ts;
+        }
+      });
+    });
   }
 
   @override
@@ -350,7 +471,6 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   @override
   Widget build(BuildContext context) {
     final contract = widget.contract;
-    final sessionDates = contract.sessionDates;
     final today = DateTime.now();
     final todayKey = _dateKey(today);
 
@@ -360,6 +480,57 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
           '${contract.clubName.isNotEmpty ? contract.clubName : "Contract"} — Session Grid',
         ),
         actions: widget.readOnly ? null : [
+          if (_isTeam)
+            _isRefreshingRatings
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.star_rate),
+                    tooltip: 'Refresh Player Ratings',
+                    onPressed: () async {
+                      setState(() => _isRefreshingRatings = true);
+                      try {
+                        final callable = FirebaseFunctions.instance.httpsCallable(
+                          'refresh_player_ratings',
+                          options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+                        );
+                        await callable.call({'teamName': widget.contract.clubName.trim()});
+                        // Re-fetch all roster ratings so the grid updates in real time.
+                        final uids = widget.contract.roster.map((p) => p.uid).toList();
+                        final results = await Future.wait([
+                          _firebase.fetchPowerRatings(uids),
+                          _firebase.fetchRatingsUpdatedAt(uids),
+                        ]);
+                        if (mounted) {
+                          setState(() {
+                            _powerRatings
+                              ..clear()
+                              ..addAll(results[0] as Map<String, double>);
+                            _ratingsUpdatedAt = results[1] as DateTime?;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Player ratings updated.'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Ratings refresh failed: $e'),
+                                backgroundColor: Colors.red),
+                          );
+                        }
+                      } finally {
+                        if (mounted) setState(() => _isRefreshingRatings = false);
+                      }
+                    },
+                  ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilterChip(
@@ -398,6 +569,19 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
         builder: (context, snapshot) {
           final sessions = snapshot.data ?? [];
           _latestSessions = sessions;
+          
+          // For team contracts the grid is purely data-driven: only dates that
+          // have an actual ContractSession document (written by Sync Schedule)
+          // are shown. No calculated dates are mixed in.
+          final List<DateTime> finalSessionDates;
+          if (contract.contractType == 'team') {
+            finalSessionDates = sessions
+                .map((s) => DateTime.parse(s.id))
+                .toList()..sort();
+          } else {
+            finalSessionDates = contract.sessionDates;
+          }
+
           final roster = _quickFillMode
               ? (_frozenRoster ?? _sortedRoster(sessions))
               : _sortedRoster(sessions);
@@ -427,7 +611,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
               Expanded(
                 child: _buildGrid(
                   roster: roster,
-                  sessionDates: sessionDates,
+                  sessionDates: finalSessionDates,
                   sessions: sessions,
                   todayKey: todayKey,
                 ),
@@ -486,7 +670,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       children: [
         // ── Fixed stats panel ──────────────────────────────────────
         SizedBox(
-          width: _statsWidth,
+          width: _activeStatsWidth,
           child: Column(
             children: [
               _buildStatsHeader(),
@@ -596,16 +780,32 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
   }
 
   Widget _buildStatsHeader() {
+    String ratingHeader = 'Rating';
+    if (_ratingsUpdatedAt != null) {
+      final d = _ratingsUpdatedAt!.toLocal();
+      ratingHeader = 'As of\n${d.month}/${d.day} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    }
     return Container(
-      height: _headerHeight,
+      height: _activeHeaderHeight,
       color: Colors.grey.shade100,
       child: Row(
         children: [
           _sortableHeaderCell('Player', _colName, 'name', align: TextAlign.left),
-          _sortableHeaderCell('Paid',   _colPaid,   'paid'),
+          if (_isTeam)
+            Container(
+              width: _colPR,
+              height: _activeHeaderHeight,
+              alignment: Alignment.center,
+              child: Text(
+                ratingHeader,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              ),
+            ),
+          if (!_isTeam) _sortableHeaderCell('Paid', _colPaid, 'paid'),
           _sortableHeaderCell('Played', _colPlayed, 'played'),
-          _sortableHeaderCell('%',      _colPct,    'pct'),
-          _sortableHeaderCell('Left',   _colLeft,   'left'),
+          if (!_isTeam) _sortableHeaderCell('%', _colPct, 'pct'),
+          if (!_isTeam) _sortableHeaderCell('Left', _colLeft, 'left'),
         ],
       ),
     );
@@ -623,7 +823,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
       onTap: () => _setSort(sortKey),
       child: Container(
         width: width,
-        height: _headerHeight,
+        height: _activeHeaderHeight,
         color: Colors.transparent,
         alignment: align == TextAlign.left ? Alignment.centerLeft : Alignment.center,
         padding: align == TextAlign.left
@@ -683,15 +883,27 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
                 player.displayName,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
-          _statCell('${player.paidSlots}', _colPaid),
+          if (_isTeam)
+            Builder(builder: (context) {
+              final pr = player.powerRating ?? _powerRatings[player.uid];
+              return Container(
+                width: _colPR,
+                alignment: Alignment.center,
+                child: Text(
+                  pr != null && pr > 0 ? pr.toStringAsFixed(2) : '—',
+                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade500),
+                ),
+              );
+            }),
+          if (!_isTeam) _statCell('${player.paidSlots}', _colPaid),
           _statCell('$played', _colPlayed),
-          _statCell('${pct.toStringAsFixed(1)}%', _colPct, color: _pctColor(pct, player.paidSlots > 0)),
-          _statCell('$left', _colLeft),
+          if (!_isTeam) _statCell('${pct.toStringAsFixed(1)}%', _colPct, color: _pctColor(pct, player.paidSlots > 0)),
+          if (!_isTeam) _statCell('$left', _colLeft),
         ],
       ),
     );
@@ -703,7 +915,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     List<ContractSession> sessions,
   ) {
     return Container(
-      height: _headerHeight,
+      height: _activeHeaderHeight,
       color: Colors.grey.shade100,
       child: Row(
         children: dates.map((d) {
@@ -725,11 +937,26 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
 
           final dateKey2 = key; // capture for closure
           final isActiveSortCol = _sortColumn == 'date:$dateKey2';
+          final isTeam = widget.contract.contractType == 'team';
+          final opponent = session.opponentName;
+          // Abbreviate opponent for display: first 5 chars
+          final opponentAbbr = (opponent != null && opponent.isNotEmpty)
+              ? (opponent.length > 5 ? opponent.substring(0, 5) : opponent)
+              : null;
+          final loc = session.locationOverride;
+          final locationAbbr = (loc != null && loc.isNotEmpty)
+              ? (loc.length > 5 ? loc.substring(0, 5) : loc)
+              : null;
+          
+          String timeStr = _fmtMinsFull(session.startMinutesOverride ?? widget.contract.startMinutes);
+
           return SizedBox(
             width: _sessionColWidth,
             child: GestureDetector(
-              // Tap = sort by this date (no setState + showDialog together)
-              onTap: () => _setSort('date:$dateKey2'),
+              // Tap: team mode → edit match details; contract mode → sort
+              onTap: isTeam && !widget.readOnly
+                  ? () => _onMatchHeaderTap(date: d, session: session)
+                  : () => _setSort('date:$dateKey2'),
               // Long press = availability/assignment dialog (organizer only)
               onLongPress: widget.readOnly
                   ? null
@@ -738,8 +965,8 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                         session: session,
                         isPast: isPast,
                       ),
-              child: Container(
-                alignment: Alignment.center,
+              child: ClipRect(
+                child: Container(
                 decoration: BoxDecoration(
                   color: isActiveSortCol
                       ? Colors.blue.shade50
@@ -756,59 +983,128 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                         : BorderSide.none,
                   ),
                 ),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                alignment: Alignment.center,
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      _monthAbbr[d.month],
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: (isToday || isActiveSortCol)
-                            ? Colors.blue.shade700
-                            : Colors.grey.shade600,
-                        fontWeight: (isToday || isActiveSortCol)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                    Text(
-                      '${d.day}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: (isToday || isActiveSortCol)
-                            ? FontWeight.bold
-                            : FontWeight.w500,
-                        color: (isToday || isActiveSortCol)
-                            ? Colors.blue.shade800
-                            : null,
-                      ),
-                    ),
-                    if (totalRoster > 0)
-                      Text(
-                        totalResponded == 0 ? '—' : '$nYes/$totalRoster',
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: totalResponded == 0
-                              ? Colors.grey.shade400
-                              : Colors.green.shade700,
-                          fontWeight: FontWeight.w600,
+                    if (isTeam) ...[
+                      if (opponent != null) ...[
+                        // Header rows: Date / vs-or-@ Opponent / Time / Location
+                        Text(
+                          '${_monthAbbr[d.month]} ${d.day}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: (isToday || isActiveSortCol) ? FontWeight.bold : FontWeight.w600,
+                            color: (isToday || isActiveSortCol) ? Colors.blue.shade800 : null,
+                          ),
                         ),
-                      ),
-                    if (!isActiveSortCol && session.assignmentState == 'published')
+                        Text(
+                          '${session.isHome ? 'vs' : '@'} $opponent',
+                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.normal),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.indigo.shade600,
+                          ),
+                        ),
+                        Text(
+                          session.locationOverride != null && session.locationOverride!.isNotEmpty
+                              ? session.locationOverride!
+                              : session.isHome
+                                  ? (widget.contract.clubAddress.isNotEmpty
+                                      ? widget.contract.clubAddress
+                                      : widget.contract.clubName)
+                                  : 'Away',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: session.isHome
+                                ? Colors.green.shade700
+                                : Colors.orange.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ] else ...[
+                        // Original layout if not a team, or if no opponent
+                        Text(
+                          _monthAbbr[d.month],
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: (isToday || isActiveSortCol)
+                                ? Colors.blue.shade700
+                                : Colors.grey.shade600,
+                            fontWeight: (isToday || isActiveSortCol)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        Text(
+                          '${d.day}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: (isToday || isActiveSortCol)
+                                ? FontWeight.bold
+                                : FontWeight.w500,
+                            color: (isToday || isActiveSortCol)
+                                ? Colors.blue.shade800
+                                : null,
+                          ),
+                        ),
+                      ],
+                      // H/A badge
                       Container(
-                        width: 6,
-                        height: 6,
-                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
                         decoration: BoxDecoration(
-                          color: Colors.indigo.shade600,
-                          shape: BoxShape.circle,
+                          color: session.isHome
+                              ? Colors.green.shade100
+                              : Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          session.isHome ? 'H' : 'A',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: session.isHome
+                                ? Colors.green.shade800
+                                : Colors.orange.shade800,
+                          ),
                         ),
                       ),
+                    ] else ...[
+                      if (totalRoster > 0)
+                        Text(
+                          totalResponded == 0 ? '—' : '$nYes/$totalRoster',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: totalResponded == 0
+                                ? Colors.grey.shade400
+                                : Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      if (!isActiveSortCol && session.assignmentState == 'published')
+                        Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(top: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.shade600,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
             ),
-          );
+          ),
+        );
         }).toList(),
       ),
     );
@@ -941,6 +1237,169 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     );
   }
 
+  Future<void> _onMatchHeaderTap({
+    required DateTime date,
+    required ContractSession session,
+  }) async {
+    final opponentCtrl = TextEditingController(text: session.opponentName ?? '');
+    final locationCtrl = TextEditingController(text: session.locationOverride ?? '');
+    bool isHome = session.isHome;
+
+    // Resolve effective start/end from override or contract default
+    int startMins = session.startMinutesOverride ?? widget.contract.startMinutes;
+    int endMins = session.endMinutesOverride ?? widget.contract.endMinutes;
+
+    String _fmtMins(int m) {
+      final h = m ~/ 60;
+      final min = m % 60;
+      final suffix = h < 12 ? 'AM' : 'PM';
+      final h12 = h % 12 == 0 ? 12 : h % 12;
+      return '$h12:${min.toString().padLeft(2, '0')} $suffix';
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('${_monthAbbr[date.month]} ${date.day} — Match Details'),
+          content: SizedBox(
+            width: 340,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: opponentCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Opponent',
+                      hintText: 'e.g. Riverside TC',
+                      isDense: true,
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Location (venue)',
+                      hintText: 'Leave blank to use contract default',
+                      isDense: true,
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 16),
+                  // Match time overrides
+                  Text(
+                    'Match Time',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.access_time, size: 16),
+                          label: Text(_fmtMins(startMins),
+                              style: const TextStyle(fontSize: 13)),
+                          onPressed: () async {
+                            final t = await showTimePicker(
+                              context: ctx,
+                              initialTime: TimeOfDay(
+                                  hour: startMins ~/ 60,
+                                  minute: startMins % 60),
+                            );
+                            if (t != null) {
+                              setDialogState(
+                                  () => startMins = t.hour * 60 + t.minute);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('–'),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.access_time_filled, size: 16),
+                          label: Text(_fmtMins(endMins),
+                              style: const TextStyle(fontSize: 13)),
+                          onPressed: () async {
+                            final t = await showTimePicker(
+                              context: ctx,
+                              initialTime: TimeOfDay(
+                                  hour: endMins ~/ 60, minute: endMins % 60),
+                            );
+                            if (t != null) {
+                              setDialogState(
+                                  () => endMins = t.hour * 60 + t.minute);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text('Home / Away:'),
+                      const SizedBox(width: 12),
+                      ChoiceChip(
+                        label: const Text('Home'),
+                        selected: isHome,
+                        selectedColor: Colors.green.shade100,
+                        onSelected: (_) => setDialogState(() => isHome = true),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Away'),
+                        selected: !isHome,
+                        selectedColor: Colors.orange.shade100,
+                        onSelected: (_) => setDialogState(() => isHome = false),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+
+    // Only store time as override if it differs from the contract default
+    final startOverride =
+        startMins != widget.contract.startMinutes ? startMins : null;
+    final endOverride =
+        endMins != widget.contract.endMinutes ? endMins : null;
+
+    final updated = session.copyWith(
+      opponentName:
+          opponentCtrl.text.trim().isEmpty ? null : opponentCtrl.text.trim(),
+      locationOverride:
+          locationCtrl.text.trim().isEmpty ? null : locationCtrl.text.trim(),
+      isHome: isHome,
+      startMinutesOverride: startOverride,
+      endMinutesOverride: endOverride,
+    );
+    await _firebase.upsertSession(widget.contract.id, updated);
+  }
+
   Widget _availRow(IconData icon, Color color, String label, int count) => Row(
     children: [
       Icon(icon, size: 16, color: color),
@@ -973,6 +1432,10 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
           final session = sessionsByDate[key];
           final state = session?.attendance[player.uid];
           final availState = session?.availability[player.uid];
+          final assignedLine = (widget.contract.lineupMode == 'competitive' &&
+                  session?.assignmentState == 'published')
+              ? session?.assignmentLine(player.uid)
+              : null;
           return _buildAttendanceCell(
             uid: player.uid,
             sessionDate: d,
@@ -980,6 +1443,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
             availState: availState,
             sessions: sessions,
             isToday: key == todayKey,
+            assignedLine: assignedLine,
           );
         }).toList(),
       ),
@@ -993,9 +1457,17 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
     required String? availState,
     required List<ContractSession> sessions,
     required bool isToday,
+    int? assignedLine,
   }) {
     final bgColor = _stateColor(state);
-    final label = _stateLabel(state);
+    // In competitive mode with a published lineup and a line number, show "L1"
+    // instead of the generic "P" label for played/confirmed players.
+    final label = (assignedLine != null && (state == 'played' || state == 'charged'))
+        ? 'L$assignedLine'
+        : _stateLabel(state);
+    final labelColor = (assignedLine != null && (state == 'played' || state == 'charged'))
+        ? Colors.indigo.shade700
+        : _stateLabelColor(state);
 
     return Builder(
       builder: (cellContext) => GestureDetector(
@@ -1026,7 +1498,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: _stateLabelColor(state),
+                    color: labelColor,
                   ),
                 ),
               if (availState != null)
@@ -1072,14 +1544,14 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
               ),
             ),
           ),
-          _statCell('$totalPaid', _colPaid,
-              color: Colors.green.shade800),
-          _statCell('$totalPlayed', _colPlayed,
-              color: Colors.green.shade800),
-          _statCell('${pct.toStringAsFixed(1)}%', _colPct,
-              color: _pctColor(pct, totalPaid > 0)),
-          _statCell('$left', _colLeft,
-              color: Colors.green.shade800),
+          if (!_isTeam)
+            _statCell('$totalPaid', _colPaid, color: Colors.green.shade800),
+          _statCell('$totalPlayed', _colPlayed, color: Colors.green.shade800),
+          if (!_isTeam)
+            _statCell('${pct.toStringAsFixed(1)}%', _colPct,
+                color: _pctColor(pct, totalPaid > 0)),
+          if (!_isTeam)
+            _statCell('$left', _colLeft, color: Colors.green.shade800),
         ],
       ),
     );

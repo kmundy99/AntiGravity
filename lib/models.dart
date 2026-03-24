@@ -45,6 +45,7 @@ class User {
   final Timestamp? lastLoginAt;
   final bool isAdmin;
   final double defaultDistanceFilter;
+  final String organizerPin; // 4-digit PIN for contract management; '' = no gate
 
   User({
     this.uid = '',
@@ -67,6 +68,7 @@ class User {
     this.lastLoginAt,
     this.isAdmin = false,
     this.defaultDistanceFilter = 10.0,
+    this.organizerPin = '',
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
@@ -118,6 +120,7 @@ class User {
           [],
       isAdmin: data['isAdmin'] ?? data['is_admin'] ?? false,
       defaultDistanceFilter: (data['defaultDistanceFilter'] ?? 10.0).toDouble(),
+      organizerPin: data['organizer_pin'] as String? ?? '',
     );
   }
 
@@ -140,6 +143,7 @@ class User {
       'blackouts': blackouts.map((b) => b.toMap()).toList(),
       if (isAdmin) 'isAdmin': isAdmin,
       'defaultDistanceFilter': defaultDistanceFilter,
+      if (organizerPin.isNotEmpty) 'organizer_pin': organizerPin,
     };
   }
 }
@@ -223,6 +227,9 @@ class ContractPlayer {
   final String? referredByUid;
   final String? notes;
   final int playedSlots;
+  final String handPreference; // 'forehand' | 'backhand' | 'neutral'
+  final List<String> blacklistedPartners; // UIDs of players this player should not be paired with
+  final double? powerRating; // From league_stats scraper; null if unmatched
 
   ContractPlayer({
     required this.uid,
@@ -235,6 +242,9 @@ class ContractPlayer {
     this.referredByUid,
     this.notes,
     this.playedSlots = 0,
+    this.handPreference = 'neutral',
+    this.blacklistedPartners = const [],
+    this.powerRating,
   });
 
   factory ContractPlayer.fromMap(Map<String, dynamic> map) => ContractPlayer(
@@ -248,6 +258,9 @@ class ContractPlayer {
     referredByUid: map['referred_by_uid'] as String?,
     notes: map['notes'] as String?,
     playedSlots: map['played_slots'] ?? 0,
+    handPreference: map['hand_preference'] as String? ?? 'neutral',
+    blacklistedPartners: List<String>.from(map['blacklisted_partners'] ?? []),
+    powerRating: (map['power_rating'] as num?)?.toDouble(),
   );
 
   Map<String, dynamic> toMap() => {
@@ -261,6 +274,9 @@ class ContractPlayer {
     if (referredByUid != null) 'referred_by_uid': referredByUid,
     if (notes != null && notes!.isNotEmpty) 'notes': notes,
     'played_slots': playedSlots,
+    'hand_preference': handPreference,
+    'blacklisted_partners': blacklistedPartners,
+    if (powerRating != null) 'power_rating': powerRating,
   };
 
   ContractPlayer copyWith({
@@ -274,6 +290,9 @@ class ContractPlayer {
     String? referredByUid,
     String? notes,
     int? playedSlots,
+    String? handPreference,
+    List<String>? blacklistedPartners,
+    double? powerRating,
   }) => ContractPlayer(
     uid: uid ?? this.uid,
     displayName: displayName ?? this.displayName,
@@ -285,6 +304,9 @@ class ContractPlayer {
     referredByUid: referredByUid ?? this.referredByUid,
     notes: notes ?? this.notes,
     playedSlots: playedSlots ?? this.playedSlots,
+    handPreference: handPreference ?? this.handPreference,
+    blacklistedPartners: blacklistedPartners ?? this.blacklistedPartners,
+    powerRating: powerRating ?? this.powerRating,
   );
 }
 
@@ -316,6 +338,11 @@ class Contract {
   final String notificationMode; // 'auto' | 'manual'
   final List<String> rosterUids; // Denormalized for Firestore array-contains queries
   final Map<String, Map<String, String>> emailTemplates; // Per-type subject/body overrides keyed by type string
+  final String lineupMode; // 'percent_played' | 'competitive'
+  final String contractType; // 'contract' | 'team'
+  final String teamUrl; // used for team contracts to track the scraped team URL
+  final String leagueName; // e.g. "Saturday Women's League"
+  final String divisionName; // e.g. "Division 1"
 
   Contract({
     this.id = '',
@@ -345,6 +372,11 @@ class Contract {
     this.notificationMode = 'auto',
     this.rosterUids = const [],
     this.emailTemplates = const {},
+    this.lineupMode = 'percent_played',
+    this.contractType = 'contract',
+    this.teamUrl = '',
+    this.leagueName = '',
+    this.divisionName = '',
   });
 
   List<DateTime> get sessionDates {
@@ -426,6 +458,11 @@ class Contract {
           Map<String, String>.from(v as Map<String, dynamic>? ?? {}),
         ));
       }(),
+      lineupMode: data['lineup_mode'] as String? ?? 'percent_played',
+      contractType: data['contract_type'] as String? ?? 'contract',
+      teamUrl: data['team_url'] as String? ?? '',
+      leagueName: data['league_name'] as String? ?? '',
+      divisionName: data['division_name'] as String? ?? '',
     );
   }
 
@@ -456,23 +493,34 @@ class Contract {
     'notification_mode': notificationMode,
     'roster_uids': rosterUids,
     if (emailTemplates.isNotEmpty) 'email_templates': emailTemplates,
+    'lineup_mode': lineupMode,
+    'contract_type': contractType,
+    if (teamUrl.isNotEmpty) 'team_url': teamUrl,
+    if (leagueName.isNotEmpty) 'league_name': leagueName,
+    if (divisionName.isNotEmpty) 'division_name': divisionName,
   };
 }
 
 /// A single contract session document (subcollection `contracts/{id}/sessions/{YYYY-MM-DD}`).
 /// [attendance] maps uid → 'played'|'reserve'|'out'|'charged'.
 /// [availability] maps uid → 'available'|'backup'|'unavailable'.
-/// [assignment] maps uid → 'confirmed'|'reserve'|'out'.
+/// [assignment] maps uid → { 'status': 'confirmed'|'reserve'|'out', 'line': 1|2|3|4 (optional) }.
 /// [assignmentState] is 'none'|'draft'|'published'.
 /// [requestSentAt] records when the organizer last sent an availability request.
+/// [opponentName] / [isHome] / [locationOverride] are used for League Team matches.
 class ContractSession {
   final String id; // doc ID = 'YYYY-MM-DD'
   final DateTime date;
   final Map<String, String> attendance; // uid → state
   final Map<String, String> availability; // uid → 'available'|'backup'|'unavailable'
-  final Map<String, String> assignment; // uid → 'confirmed'|'reserve'|'out'
+  final Map<String, Map<String, dynamic>> assignment; // uid → { status, line? }
   final String assignmentState; // 'none'|'draft'|'published'
   final DateTime? requestSentAt;
+  final String? opponentName;
+  final bool isHome;
+  final String? locationOverride;
+  final int? startMinutesOverride; // Per-match start time override (minutes from midnight)
+  final int? endMinutesOverride;   // Per-match end time override
 
   ContractSession({
     required this.id,
@@ -482,6 +530,11 @@ class ContractSession {
     this.assignment = const {},
     this.assignmentState = 'none',
     this.requestSentAt,
+    this.opponentName,
+    this.isHome = true,
+    this.locationOverride,
+    this.startMinutesOverride,
+    this.endMinutesOverride,
   });
 
   factory ContractSession.fromFirestore(DocumentSnapshot doc) {
@@ -490,14 +543,29 @@ class ContractSession {
     final rawAvailability = data['availability'] as Map<String, dynamic>? ?? {};
     final rawAssignment = data['assignment'] as Map<String, dynamic>? ?? {};
     final sentAt = data['request_sent_at'] as Timestamp?;
+
+    // Migration-safe: old docs store assignment as Map<uid, String>; new docs
+    // store Map<uid, Map<String, dynamic>> with 'status' and optional 'line'.
+    final assignment = rawAssignment.map((uid, v) {
+      if (v is String) {
+        return MapEntry(uid, <String, dynamic>{'status': v});
+      }
+      return MapEntry(uid, Map<String, dynamic>.from(v as Map));
+    });
+
     return ContractSession(
       id: doc.id,
       date: (data['date'] as Timestamp).toDate(),
       attendance: rawAttendance.map((k, v) => MapEntry(k, v as String)),
       availability: rawAvailability.map((k, v) => MapEntry(k, v as String)),
-      assignment: rawAssignment.map((k, v) => MapEntry(k, v as String)),
+      assignment: assignment,
       assignmentState: data['assignment_state'] as String? ?? 'none',
       requestSentAt: sentAt?.toDate(),
+      opponentName: data['opponent_name'] as String?,
+      isHome: data['is_home'] as bool? ?? true,
+      locationOverride: data['location_override'] as String?,
+      startMinutesOverride: data['start_minutes_override'] as int?,
+      endMinutesOverride: data['end_minutes_override'] as int?,
     );
   }
 
@@ -508,14 +576,24 @@ class ContractSession {
     'assignment': assignment,
     'assignment_state': assignmentState,
     if (requestSentAt != null) 'request_sent_at': Timestamp.fromDate(requestSentAt!),
+    if (opponentName != null && opponentName!.isNotEmpty) 'opponent_name': opponentName,
+    'is_home': isHome,
+    if (locationOverride != null && locationOverride!.isNotEmpty) 'location_override': locationOverride,
+    if (startMinutesOverride != null) 'start_minutes_override': startMinutesOverride,
+    if (endMinutesOverride != null) 'end_minutes_override': endMinutesOverride,
   };
 
   ContractSession copyWith({
     Map<String, String>? attendance,
     Map<String, String>? availability,
-    Map<String, String>? assignment,
+    Map<String, Map<String, dynamic>>? assignment,
     String? assignmentState,
     DateTime? requestSentAt,
+    String? opponentName,
+    bool? isHome,
+    String? locationOverride,
+    int? startMinutesOverride,
+    int? endMinutesOverride,
   }) => ContractSession(
     id: id,
     date: date,
@@ -524,7 +602,18 @@ class ContractSession {
     assignment: assignment ?? this.assignment,
     assignmentState: assignmentState ?? this.assignmentState,
     requestSentAt: requestSentAt ?? this.requestSentAt,
+    opponentName: opponentName ?? this.opponentName,
+    isHome: isHome ?? this.isHome,
+    locationOverride: locationOverride ?? this.locationOverride,
+    startMinutesOverride: startMinutesOverride ?? this.startMinutesOverride,
+    endMinutesOverride: endMinutesOverride ?? this.endMinutesOverride,
   );
+
+  /// Convenience: get just the status string for a given uid.
+  String? assignmentStatus(String uid) => assignment[uid]?['status'] as String?;
+
+  /// Convenience: get the assigned line number for a given uid (null if not set).
+  int? assignmentLine(String uid) => assignment[uid]?['line'] as int?;
 }
 
 /// A fully-rendered per-player email stored on a ScheduledMessage in approval mode.
@@ -772,7 +861,7 @@ class ComposeMessageConfig {
   final Match? match;
   final DateTime? sessionDate;
   final List<ContractPlayer>? contractRosterPlayers;
-  final Map<String, String>? sessionAssignment; // uid → 'confirmed'|'reserve'|'out'
+  final Map<String, Map<String, dynamic>>? sessionAssignment; // uid → { status, line? }
   final Future<void> Function()? postSendAction;
 
   const ComposeMessageConfig({
@@ -828,5 +917,38 @@ class Roster {
       'waitlist_timestamp': waitlistTimestamp,
       if (ntrpLevel != null) 'ntrpLevel': ntrpLevel,
     };
+  }
+}
+
+class LeagueTeam {
+  final String url;
+  final String name;
+  final String leagueName;
+  final String divisionName;
+  final String level;
+  final String gender;
+  final String? homeClubAddress;
+
+  LeagueTeam({
+    required this.url,
+    required this.name,
+    this.leagueName = '',
+    this.divisionName = '',
+    this.level = '',
+    this.gender = '',
+    this.homeClubAddress,
+  });
+
+  factory LeagueTeam.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    return LeagueTeam(
+      // Support both new (team_url/team_name) and legacy (URL/Name) field names
+      url: data['team_url'] as String? ?? data['URL'] as String? ?? '',
+      name: data['team_name'] as String? ?? data['Name'] as String? ?? '',
+      leagueName: data['league_name'] as String? ?? '',
+      divisionName: data['division_name'] as String? ?? '',
+      level: data['Level'] as String? ?? '',
+      gender: data['Gender'] as String? ?? '',
+    );
   }
 }

@@ -5,16 +5,32 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "functions": {
-    "source": "functions",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log",
-      "*.local"
-    ]
-  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    },
+    {
+      "source": "scraper",
+      "codebase": "python-scraper",
+      "runtime": "python311",
+      "ignore": [
+        "venv",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local",
+        "__pycache__"
+      ]
+    }
+  ],
   "hosting": {
     "public": "build/web",
     "ignore": [
@@ -25,15 +41,30 @@
     "headers": [
       {
         "source": "/flutter_service_worker.js",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       },
       {
         "source": "/index.html",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       },
       {
         "source": "/manifest.json",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ],
     "rewrites": [

@@ -5,6 +5,9 @@ import '../models.dart';
 import '../services/firebase_service.dart';
 import '../services/notification_service.dart';
 import '../utils/message_templates.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
 import 'compose_message_screen.dart';
 import 'contract_setup_screen.dart';
 import 'contract_session_grid_screen.dart';
@@ -16,6 +19,8 @@ class ContractScreen extends StatefulWidget {
   final String currentUserUid;
   final String organizerName;
   final String organizerEmail;
+  /// 4-digit PIN stored on the user doc; '' = no gate.
+  final String organizerPin;
   /// Contracts the current user is enrolled in as a player (not as organizer).
   final List<Contract> playerContracts;
   const ContractScreen({
@@ -23,6 +28,7 @@ class ContractScreen extends StatefulWidget {
     required this.currentUserUid,
     this.organizerName = '',
     this.organizerEmail = '',
+    this.organizerPin = '',
     this.playerContracts = const [],
   });
 
@@ -34,8 +40,15 @@ class _ContractScreenState extends State<ContractScreen> {
   final _firebaseService = FirebaseService();
   final Set<String> _selectedPlayerUids = {};
 
-  late Stream<Contract?> _contractStream;
+  late Stream<List<Contract>> _contractStream;
   late Stream<List<ScheduledMessage>> _messagesStream;
+  int _selectedSeasonalIndex = 0;
+  int _selectedTeamIndex = 0;
+  bool _isSyncing = false;
+  String _syncStatusMsg = ''; // shown below the Sync button during the two-step process
+  bool _isRefreshingDirectory = false;
+  final Set<String> _fetchingRatings = {};
+  final Map<String, double> _powerRatings = {};
 
   @override
   void initState() {
@@ -52,7 +65,7 @@ class _ContractScreenState extends State<ContractScreen> {
   }
 
   void _initStreams() {
-    _contractStream = _firebaseService.getContractByOrganizer(widget.currentUserUid);
+    _contractStream = _firebaseService.getContractsByOrganizer(widget.currentUserUid);
     _messagesStream = _firebaseService.getScheduledMessagesStream(widget.currentUserUid);
   }
 
@@ -203,6 +216,57 @@ class _ContractScreenState extends State<ContractScreen> {
     );
 
     slotsCtrl.dispose();
+  }
+
+  Future<void> _deleteContract(Contract contract, {required bool isTeam}) async {
+    final label = isTeam ? 'team' : 'contract';
+    final name = contract.clubName.isNotEmpty ? contract.clubName : 'Unnamed';
+    final isDraft = contract.status == ContractStatus.draft;
+
+    if (!isDraft) {
+      // Require explicit confirmation for active / completed contracts.
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Delete $label?'),
+          content: Text(
+            '"$name" is not in Draft status.\n\n'
+            'Deleting it will permanently remove all sessions, rosters, and '
+            'scheduled messages. This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete permanently'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    try {
+      await _firebaseService.deleteContract(contract.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"$name" deleted.'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _transferOwnership(Contract contract) async {
@@ -413,24 +477,459 @@ class _ContractScreenState extends State<ContractScreen> {
 
   String _formatCurrency(double amount) => '\$${amount.toStringAsFixed(2)}';
 
+  /// Lowercase and strip all non-alphanumeric characters — mirrors the Python
+  /// _slugify() in scraper/writer.py so Dart queries match Firestore slug fields.
+  /// e.g. "Woburn Racquet Club - Blue" → "woburnracquetclubblue"
+  static String _slugify(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  /// Parses "10:00 AM", "10:00", "10AM", "10 AM" → minutes from midnight.
+  /// Returns null if the string can't be parsed.
+  static int? _parseTimeToMinutes(String raw) {
+    final s = raw.trim().toUpperCase();
+    final isPm = s.contains('PM');
+    final isAm = s.contains('AM');
+    final digits = s.replaceAll(RegExp(r'[^0-9:]'), '');
+    final parts = digits.split(':');
+    final hour = int.tryParse(parts[0]);
+    if (hour == null) return null;
+    final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    int h = hour;
+    if (isPm && hour != 12) h = hour + 12;
+    if (isAm && hour == 12) h = 0;
+    return h * 60 + minute;
+  }
+
+  Future<void> _syncSchedule(Contract contract) async {
+    final myTeam = contract.clubName.trim();
+    if (myTeam.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No team name set — edit the contract Club Name first.')),
+      );
+      return;
+    }
+    final slug = _slugify(myTeam);
+    if (slug.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Team name has no usable characters after slugifying.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSyncing = true;
+      _syncStatusMsg = 'Step 1 of 2: Scraping latest matches from the league site…';
+    });
+
+    try {
+      final db = FirebaseFirestore.instance;
+
+      // ── Step 1: Call the Cloud Function to scrape fresh data for this team. ──
+      // Pass teamUrl for precision (avoids cross-division contamination when
+      // the same club name plays in multiple divisions).
+      // Falls through to cached Firestore data on CF error.
+      final teamUrl = contract.teamUrl;
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable(
+          'refresh_team_schedules',
+          options: HttpsCallableOptions(timeout: const Duration(minutes: 8)),
+        );
+        final cfPayload = teamUrl.isNotEmpty
+            ? {'teamUrl': teamUrl, 'teamName': myTeam}
+            : {'teamName': myTeam};
+        await callable.call(cfPayload);
+      } catch (cfErr) {
+        debugPrint('CF refresh_team_schedules error (continuing with cached data): $cfErr');
+      }
+
+      if (!mounted) return;
+      setState(() => _syncStatusMsg = 'Step 2 of 2: Importing sessions into contract…');
+
+      // ── Step 2: Query Firestore for this team's matches. ──
+      // Prefer querying by team_url (precise, set by new scraper).
+      // Fall back to slug-based dual query for older cached data.
+      final seen = <String>{};
+      final matches = <Map<String, dynamic>>[];
+
+      if (teamUrl.isNotEmpty) {
+        final urlSnap = await db
+            .collection('league_matches')
+            .where('team_url', isEqualTo: teamUrl)
+            .get();
+        for (final doc in urlSnap.docs) {
+          if (seen.add(doc.id)) matches.add(doc.data());
+        }
+      }
+
+      // If team_url query returned nothing, fall back to slug-based query
+      if (matches.isEmpty) {
+        final homeSnaps = await db
+            .collection('league_matches')
+            .where('home_team_slug', isEqualTo: slug)
+            .get();
+        final awaySnaps = await db
+            .collection('league_matches')
+            .where('away_team_slug', isEqualTo: slug)
+            .get();
+        for (final doc in [...homeSnaps.docs, ...awaySnaps.docs]) {
+          final data = doc.data();
+          final key = (data['match_url'] as String?)?.isNotEmpty == true
+              ? data['match_url'] as String
+              : doc.id;
+          if (seen.add(key)) matches.add(data);
+        }
+      }
+
+      if (matches.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No matches found for "$myTeam" in league_matches. '
+                'The cloud scraper may still be running — try again in a minute.',
+              ),
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
+        return;
+      }
+
+      // ── Derive season bounds and weekday from the actual match data. ──
+      // This makes the contract fully data-driven: season_start/end and
+      // weekday are written back to Firestore so the UI reflects reality.
+      String? minDate;
+      String? maxDate;
+      int? derivedWeekday;
+      for (final m in matches) {
+        final d = m['match_date'] as String?;
+        if (d == null || d.isEmpty) continue;
+        if (minDate == null || d.compareTo(minDate) < 0) minDate = d;
+        if (maxDate == null || d.compareTo(maxDate) > 0) maxDate = d;
+        if (derivedWeekday == null) {
+          final p = d.split('-');
+          if (p.length == 3) {
+            final yr = int.tryParse(p[0]);
+            final mo = int.tryParse(p[1]);
+            final dy = int.tryParse(p[2]);
+            if (yr != null && mo != null && dy != null) {
+              derivedWeekday = DateTime.utc(yr, mo, dy).weekday;
+            }
+          }
+        }
+      }
+
+      if (minDate != null && maxDate != null) {
+        final sp = minDate.split('-');
+        final ep = maxDate.split('-');
+        await db.collection('contracts').doc(contract.id).update({
+          'season_start': Timestamp.fromDate(
+              DateTime.utc(int.parse(sp[0]), int.parse(sp[1]), int.parse(sp[2]))),
+          'season_end': Timestamp.fromDate(
+              DateTime.utc(int.parse(ep[0]), int.parse(ep[1]), int.parse(ep[2]))),
+          if (derivedWeekday != null) 'weekday': derivedWeekday,
+        });
+      }
+
+      // Batch all session writes for efficiency.
+      final batch = db.batch();
+      int syncCount = 0;
+
+      for (final m in matches) {
+        // match_date is always stored as YYYY-MM-DD string by the scraper.
+        final matchDateStr = m['match_date'] as String?;
+        if (matchDateStr == null) continue;
+
+        // Use the raw YYYY-MM-DD string directly as the doc ID — no DateTime
+        // conversion to avoid local-timezone offset shifting the date.
+        final dateId = matchDateStr;
+        final parts = matchDateStr.split('-');
+        if (parts.length != 3) continue;
+        final yr = int.tryParse(parts[0]);
+        final mo = int.tryParse(parts[1]);
+        final dy = int.tryParse(parts[2]);
+        if (yr == null || mo == null || dy == null) continue;
+
+        final homeTeam = (m['home_team'] as String? ?? '').trim();
+        final awayTeam = (m['away_team'] as String? ?? '').trim();
+        // Use the stored slug field for the isHome check so punctuation
+        // differences in the raw team strings can't flip the result.
+        final isHome = (m['home_team_slug'] as String? ?? _slugify(homeTeam)) == slug;
+        final opponent = isHome ? awayTeam : homeTeam;
+
+        // All keys must be snake_case to match ContractSession.fromFirestore.
+        final sessionData = <String, dynamic>{
+          'date': Timestamp.fromDate(DateTime.utc(yr, mo, dy)),
+          'is_home': isHome,
+          if (opponent.isNotEmpty) 'opponent_name': opponent,
+        };
+
+        final venue = (m['location'] as String?)?.trim();
+        if (venue != null && venue.isNotEmpty) {
+          sessionData['location_override'] = venue;
+        }
+
+        final startTimeStr = (m['start_time'] as String?)?.trim();
+        if (startTimeStr != null && startTimeStr.isNotEmpty) {
+          final mins = _parseTimeToMinutes(startTimeStr);
+          if (mins != null) sessionData['start_minutes_override'] = mins;
+        }
+
+        final sessionRef = db
+            .collection('contracts')
+            .doc(contract.id)
+            .collection('sessions')
+            .doc(dateId);
+        batch.set(sessionRef, sessionData, SetOptions(merge: true));
+        syncCount++;
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Schedule synced: $syncCount matches imported.'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync failed: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _isSyncing = false; _syncStatusMsg = ''; });
+    }
+  }
+
+  /// Calls the refresh_team_names Cloud Function to re-scrape the league site
+  /// and rebuild the league_teams collection (deduped by team_slug doc ID).
+  Future<void> _refreshTeamDirectory() async {
+    setState(() => _isRefreshingDirectory = true);
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'refresh_team_names',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      );
+      await callable.call();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Team directory refreshed.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: [${e.code}] ${e.message}'),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 10),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshingDirectory = false);
+    }
+  }
+
   // ── Build ────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Contract?>(
+    // User-level PIN gate — shown before any contract data loads.
+    if (!_pinVerified) {
+      return widget.organizerPin.isNotEmpty
+          ? _buildPinGate()
+          : _buildCreatePinGate();
+    }
+
+    return StreamBuilder<List<Contract>>(
       stream: _contractStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final contract = snapshot.data;
+        final contracts = snapshot.data ?? [];
 
-        if (contract == null) {
+        if (contracts.isEmpty) {
           return _buildEmptyState();
         }
 
-        return _buildContractView(contract);
+        final seasonal = contracts.where((c) => c.contractType == 'contract').toList();
+        final teams = contracts.where((c) => c.contractType == 'team').toList();
+
+        return DefaultTabController(
+          length: 2,
+          child: Column(
+            children: [
+              Material(
+                color: Colors.white,
+                elevation: 1,
+                child: TabBar(
+                  tabs: [
+                    Tab(
+                      icon: const Icon(Icons.assignment_outlined, size: 18),
+                      text: seasonal.isEmpty
+                          ? 'Seasonal'
+                          : 'Seasonal (${seasonal.length})',
+                    ),
+                    Tab(
+                      icon: const Icon(Icons.emoji_events_outlined, size: 18),
+                      text: teams.isEmpty ? 'Leagues' : 'Leagues (${teams.length})',
+                    ),
+                  ],
+                  labelColor: Colors.indigo.shade800,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.indigo.shade800,
+                  labelStyle:
+                      const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildTabContent(seasonal, isTeam: false),
+                    _buildTabContent(teams, isTeam: true),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
       },
+    );
+  }
+
+  Widget _buildTabContent(List<Contract> contracts, {required bool isTeam}) {
+    if (contracts.isEmpty) {
+      return _buildEmptyTabState(isTeam: isTeam);
+    }
+
+    final idxRef = isTeam ? _selectedTeamIndex : _selectedSeasonalIndex;
+    final idx = idxRef.clamp(0, contracts.length - 1);
+    if (idx != idxRef) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {
+        if (isTeam) {
+          _selectedTeamIndex = idx;
+        } else {
+          _selectedSeasonalIndex = idx;
+        }
+      }));
+    }
+    final contract = contracts[idx];
+    _hydrateRatings(contract);
+    return _buildContractView(contract, contracts, isTeam: isTeam);
+  }
+
+  Widget _buildEmptyTabState({required bool isTeam}) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isTeam ? Icons.emoji_events_outlined : Icons.assignment_outlined,
+                size: 64,
+                color: Colors.blue.shade200,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                isTeam ? 'No League Teams yet' : 'No Seasonal Contracts yet',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isTeam
+                    ? 'Create a team to track matches, lineups, and rosters.'
+                    : 'Set up a contract to manage your seasonal court sessions.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add),
+                label: Text(isTeam ? 'New Team' : 'New Contract'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade900,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ContractSetupScreen(
+                      organizerId: widget.currentUserUid,
+                      organizerName: widget.organizerName,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _hydrateRatings(Contract contract) {
+    final missing = contract.roster
+        .where((p) =>
+            p.powerRating == null &&
+            !_powerRatings.containsKey(p.uid) &&
+            !_fetchingRatings.contains(p.uid))
+        .map((p) => p.uid)
+        .toList();
+    if (missing.isEmpty) return;
+    _fetchingRatings.addAll(missing);
+    _firebaseService.fetchPowerRatings(missing).then((ratings) {
+      if (mounted) setState(() => _powerRatings.addAll(ratings));
+    });
+  }
+
+  Widget _buildContractPicker(List<Contract> contracts, {required bool isTeam}) {
+    final selectedIdx = isTeam ? _selectedTeamIndex : _selectedSeasonalIndex;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: List.generate(contracts.length, (i) {
+          final c = contracts[i];
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(c.clubName.isNotEmpty ? c.clubName : (isTeam ? 'Team ${i + 1}' : 'Contract ${i + 1}')),
+              selected: i == selectedIdx,
+              onSelected: (_) => setState(() {
+                if (isTeam) {
+                  _selectedTeamIndex = i;
+                } else {
+                  _selectedSeasonalIndex = i;
+                }
+              }),
+              selectedColor: Colors.indigo.shade100,
+            ),
+          );
+        }),
+      ),
     );
   }
 
@@ -546,10 +1045,9 @@ class _ContractScreenState extends State<ContractScreen> {
     );
   }
 
-  Widget _buildPinGate(Contract contract) {
+  Widget _buildPinGate() {
     // Request focus exactly once — avoids the Android keyboard flicker caused by
     // autofocus inside a StreamBuilder that rebuilds on Firestore updates.
-    // (We also cache the streams now so this happens much less often)
     if (!_pinFocusRequested) {
       _pinFocusRequested = true;
       Future.delayed(const Duration(milliseconds: 100), () {
@@ -564,14 +1062,14 @@ class _ContractScreenState extends State<ContractScreen> {
           children: [
             Icon(Icons.lock_outlined, size: 64, color: Colors.blue.shade200),
             const SizedBox(height: 16),
-            Text(
-              contract.clubName.isNotEmpty ? contract.clubName : 'Contract',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const Text(
+              'Organizer Access',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Enter your organizer PIN to manage this contract.',
+              'Enter your organizer PIN to continue.',
               style: TextStyle(color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
@@ -585,8 +1083,8 @@ class _ContractScreenState extends State<ContractScreen> {
                 obscureText: !_pinVisible,
                 keyboardType: TextInputType.number,
                 autofillHints: const [],
-                onCompleted: (_) => _checkPin(contract),
-                onSubmitted: (_) => _checkPin(contract),
+                onCompleted: (_) => _checkPin(),
+                onSubmitted: (_) => _checkPin(),
                 defaultPinTheme: PinTheme(
                   width: 50,
                   height: 60,
@@ -630,7 +1128,7 @@ class _ContractScreenState extends State<ContractScreen> {
             SizedBox(
               width: 260,
               child: ElevatedButton(
-                onPressed: () => _checkPin(contract),
+                onPressed: () => _checkPin(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue.shade900,
                   foregroundColor: Colors.white,
@@ -639,22 +1137,108 @@ class _ContractScreenState extends State<ContractScreen> {
                 child: const Text('Unlock'),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _checkPin() {
+    if (_pinEntryCtrl.text == widget.organizerPin) {
+      setState(() {
+        _pinVerified = true;
+        _pinError = null;
+        _pinEntryCtrl.clear();
+      });
+    } else {
+      setState(() => _pinError = 'Incorrect PIN — try again');
+    }
+  }
+
+  Widget _buildCreatePinGate() {
+    if (!_pinFocusRequested) {
+      _pinFocusRequested = true;
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _pinFocusNode.requestFocus();
+      });
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_open_outlined, size: 64, color: Colors.indigo.shade200),
+            const SizedBox(height: 16),
+            const Text(
+              'Create an Organizer PIN',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
-            TextButton.icon(
-              icon: const Icon(Icons.email_outlined, size: 18),
-              label: const Text('Email me my PIN'),
-              onPressed: () async {
-                await NotificationService.sendContractPin(
-                  organizerUid: widget.currentUserUid,
-                  pin: contract.organizerPin,
-                  clubName: contract.clubName,
-                );
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('PIN sent to your registered contact')),
-                  );
-                }
-              },
+            Text(
+              'Set a 4-digit PIN to protect your organizer management screen. '
+              'Only you will need to enter it.',
+              style: TextStyle(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: 260,
+              child: Pinput(
+                controller: _pinEntryCtrl,
+                focusNode: _pinFocusNode,
+                length: 4,
+                obscureText: !_pinVisible,
+                keyboardType: TextInputType.number,
+                autofillHints: const [],
+                defaultPinTheme: PinTheme(
+                  width: 50,
+                  height: 60,
+                  textStyle: const TextStyle(fontSize: 22, color: Colors.black87),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade400),
+                  ),
+                ),
+                focusedPinTheme: PinTheme(
+                  width: 50,
+                  height: 60,
+                  textStyle: const TextStyle(fontSize: 22, color: Colors.black87),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.indigo.shade600, width: 2),
+                  ),
+                ),
+              ),
+            ),
+            if (_pinError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _pinError!,
+                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+              ),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: 260,
+              child: ElevatedButton(
+                onPressed: () => _savePin(_pinEntryCtrl.text),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade800,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text('Set PIN'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => setState(() => _pinVerified = true),
+              child: Text('Skip for now',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
             ),
           ],
         ),
@@ -662,22 +1246,25 @@ class _ContractScreenState extends State<ContractScreen> {
     );
   }
 
-  void _checkPin(Contract contract) {
-    if (_pinEntryCtrl.text == contract.organizerPin) {
+  Future<void> _savePin(String pin) async {
+    if (pin.length != 4) {
+      setState(() => _pinError = 'Enter a 4-digit PIN');
+      return;
+    }
+    await _firebaseService.saveOrganizerPin(widget.currentUserUid, pin);
+    if (mounted) {
       setState(() {
         _pinVerified = true;
         _pinError = null;
+        _pinEntryCtrl.clear();
       });
-    } else {
-      setState(() => _pinError = 'Incorrect PIN — try again');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PIN saved — you\'re now unlocked')),
+      );
     }
   }
 
-  Widget _buildContractView(Contract contract) {
-    if (contract.organizerPin.isNotEmpty && !_pinVerified) {
-      return _buildPinGate(contract);
-    }
-
+  Widget _buildContractView(Contract contract, List<Contract> allContracts, {required bool isTeam}) {
     final sessions = contract.totalSessions;
     final spots = contract.spotsPerSession;
     final total = contract.totalCourtSlots;
@@ -686,6 +1273,29 @@ class _ContractScreenState extends State<ContractScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // ── Top action row ────────────────────────────────────────
+        Row(
+          children: [
+            if (allContracts.length > 1)
+              Expanded(child: _buildContractPicker(allContracts, isTeam: isTeam))
+            else
+              const Spacer(),
+            TextButton.icon(
+              icon: const Icon(Icons.add, size: 16),
+              label: Text(isTeam ? 'New Team' : 'New Contract'),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ContractSetupScreen(
+                    organizerId: widget.currentUserUid,
+                    organizerName: widget.organizerName,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
         // ── Summary card ──────────────────────────────────────────
         Card(
           elevation: 2,
@@ -775,6 +1385,14 @@ class _ContractScreenState extends State<ContractScreen> {
                       label: const Text('Transfer Ownership'),
                       onPressed: () => _transferOwnership(contract),
                     ),
+                    TextButton.icon(
+                      icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade700),
+                      label: Text(
+                        'Delete ${isTeam ? 'Team' : 'Contract'}',
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
+                      onPressed: () => _deleteContract(contract, isTeam: isTeam),
+                    ),
                   ],
                 ),
               ],
@@ -782,42 +1400,44 @@ class _ContractScreenState extends State<ContractScreen> {
           ),
         ),
 
-        const SizedBox(height: 16),
+        if (!isTeam) ...[
+          const SizedBox(height: 16),
 
-        // ── Capacity indicator ────────────────────────────────────
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '$committed of $total slots committed',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      '$sessions sessions × $spots spots/session',
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: total > 0 ? (committed / total).clamp(0.0, 1.0) : 0,
-                    minHeight: 10,
-                    backgroundColor: Colors.grey.shade200,
-                    color: committed >= total ? Colors.red : Colors.blue.shade700,
+          // ── Capacity indicator ──────────────────────────────────
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '$committed of $total slots committed',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '$sessions sessions × $spots spots/session',
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: total > 0 ? (committed / total).clamp(0.0, 1.0) : 0,
+                      minHeight: 10,
+                      backgroundColor: Colors.grey.shade200,
+                      color: committed >= total ? Colors.red : Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
 
         const SizedBox(height: 16),
 
@@ -1034,8 +1654,9 @@ class _ContractScreenState extends State<ContractScreen> {
 
 
   Widget _buildPlayerTile(Contract contract, ContractPlayer player) {
+    final isTeam = contract.contractType == 'team';
     final confirmed = player.paymentStatus == 'confirmed';
-    final amountOwed = contract.pricePerSlot > 0
+    final amountOwed = (!isTeam && contract.pricePerSlot > 0)
         ? player.paidSlots * contract.pricePerSlot
         : null;
 
@@ -1067,7 +1688,28 @@ class _ContractScreenState extends State<ContractScreen> {
             ),
           ],
         ),
-        title: Text(player.displayName),
+        title: Builder(builder: (context) {
+          final pr = player.powerRating ?? _powerRatings[player.uid];
+          return Row(
+            children: [
+              Flexible(child: Text(player.displayName)),
+              if (pr != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'PR ${pr.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 10, color: Colors.blueGrey.shade700, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ],
+          );
+        }),
         subtitle: Text(
           amountOwed != null
               ? '${player.paidSlots} sessions · ${_formatCurrency(amountOwed)}'
@@ -1076,21 +1718,22 @@ class _ContractScreenState extends State<ContractScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FilterChip(
-              label: Text(confirmed ? 'Paid' : 'Unpaid',
-                  style: const TextStyle(fontSize: 12)),
-              selected: confirmed,
-              onSelected: (_) => _togglePayment(contract, player),
-              selectedColor: Colors.green.shade100,
-              backgroundColor: Colors.amber.shade50,
-              checkmarkColor: Colors.green.shade700,
-              visualDensity: VisualDensity.compact,
-            ),
-            IconButton(
-              icon: Icon(Icons.notifications_outlined,
-                  size: 18, color: Colors.blue.shade400),
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Send notification',
+            if (!isTeam) ...[
+              FilterChip(
+                label: Text(confirmed ? 'Paid' : 'Unpaid',
+                    style: const TextStyle(fontSize: 12)),
+                selected: confirmed,
+                onSelected: (_) => _togglePayment(contract, player),
+                selectedColor: Colors.green.shade100,
+                backgroundColor: Colors.amber.shade50,
+                checkmarkColor: Colors.green.shade700,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                icon: Icon(Icons.notifications_outlined,
+                    size: 18, color: Colors.blue.shade400),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Send notification',
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1114,6 +1757,7 @@ class _ContractScreenState extends State<ContractScreen> {
                 ),
               ),
             ),
+            ], // end if (!isTeam)
             IconButton(
               icon: Icon(Icons.person_remove_outlined,
                   size: 18, color: Colors.red.shade300),

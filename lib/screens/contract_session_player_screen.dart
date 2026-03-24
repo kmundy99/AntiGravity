@@ -124,7 +124,7 @@ class ContractSessionPlayerScreen extends StatelessWidget {
     }
 
     final updated = session.copyWith(
-      assignment: {...session.assignment, playerUid: 'out'},
+      assignment: {...session.assignment, playerUid: <String, dynamic>{'status': 'out'}},
     );
     await firebase.upsertSession(contractId, updated);
 
@@ -144,7 +144,7 @@ class ContractSessionPlayerScreen extends StatelessWidget {
     ContractSession session,
   ) async {
     final updated = session.copyWith(
-      assignment: {...session.assignment, playerUid: 'out'},
+      assignment: {...session.assignment, playerUid: <String, dynamic>{'status': 'out'}},
     );
     await firebase.upsertSession(contractId, updated);
 
@@ -231,17 +231,16 @@ class ContractSessionPlayerScreen extends StatelessWidget {
     final endStr = _formatTime(contract.endMinutes);
     final dayStr = DateFormat('EEEE, MMMM d').format(sessionDt);
 
-    final myStatus = session?.assignment[playerUid];
+    final myStatus = session?.assignmentStatus(playerUid);
     final isConfirmed = myStatus == 'confirmed';
     final isReserve = myStatus == 'reserve';
 
     final roster = contract.roster;
-    final assignment = session?.assignment ?? {};
     final assignmentPublished = (session?.assignmentState ?? 'none') == 'published';
 
-    final confirmed = roster.where((p) => assignment[p.uid] == 'confirmed').toList();
-    final reserves = roster.where((p) => assignment[p.uid] == 'reserve').toList();
-    final out = roster.where((p) => assignment[p.uid] == 'out').toList();
+    final confirmed = roster.where((p) => session?.assignmentStatus(p.uid) == 'confirmed').toList();
+    final reserves = roster.where((p) => session?.assignmentStatus(p.uid) == 'reserve').toList();
+    final out = roster.where((p) => session?.assignmentStatus(p.uid) == 'out').toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),

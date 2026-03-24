@@ -4,6 +4,10 @@ import '../models.dart';
 class FirebaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Future<void> saveOrganizerPin(String uid, String pin) async {
+    await _db.collection('users').doc(uid).update({'organizer_pin': pin});
+  }
+
   Future<void> saveUser(User user, String phone) async {
     await _db
         .collection('users')
@@ -56,6 +60,54 @@ class FirebaseService {
           if (snap.docs.isEmpty) return null;
           return Contract.fromFirestore(snap.docs.first);
         });
+  }
+
+  Stream<List<Contract>> getContractsByOrganizer(String organizerUid) {
+    return _db
+        .collection('contracts')
+        .where('organizer_id', isEqualTo: organizerUid)
+        .snapshots()
+        .map((snap) => snap.docs.map(Contract.fromFirestore).toList());
+  }
+
+  /// Fetches power_rating from league_stats/{uid} for each uid in the list.
+  /// Returns only entries where a rating exists.
+  Future<Map<String, double>> fetchPowerRatings(List<String> uids) async {
+    final result = <String, double>{};
+    if (uids.isEmpty) return result;
+    // Firestore 'whereIn' supports up to 30 values; chunk if needed.
+    for (int i = 0; i < uids.length; i += 30) {
+      final batch = uids.sublist(i, (i + 30).clamp(0, uids.length));
+      final snap = await _db
+          .collection('league_stats')
+          .where(FieldPath.documentId, whereIn: batch)
+          .get();
+      for (final doc in snap.docs) {
+        final rating = (doc.data()['power_rating'] as num?)?.toDouble();
+        if (rating != null) result[doc.id] = rating;
+      }
+    }
+    return result;
+  }
+
+  /// Returns the most recent last_scraped timestamp across the given uids.
+  Future<DateTime?> fetchRatingsUpdatedAt(List<String> uids) async {
+    if (uids.isEmpty) return null;
+    DateTime? latest;
+    for (int i = 0; i < uids.length; i += 30) {
+      final batch = uids.sublist(i, (i + 30).clamp(0, uids.length));
+      final snap = await _db
+          .collection('league_stats')
+          .where(FieldPath.documentId, whereIn: batch)
+          .get();
+      for (final doc in snap.docs) {
+        final ts = doc.data()['last_scraped'];
+        DateTime? dt;
+        if (ts is Timestamp) dt = ts.toDate();
+        if (dt != null && (latest == null || dt.isAfter(latest))) latest = dt;
+      }
+    }
+    return latest;
   }
 
   Stream<Contract?> getContractStream(String contractId) {
@@ -176,6 +228,37 @@ class FirebaseService {
 
   Future<void> deleteScheduledMessage(String id) async {
     await _db.collection('scheduled_messages').doc(id).delete();
+  }
+
+  /// Deletes a contract and all its subcollection documents (sessions,
+  /// scheduled_messages). Firestore does not cascade-delete subcollections
+  /// automatically, so we delete them client-side first.
+  Future<void> deleteContract(String contractId) async {
+    // 1. Delete all session docs.
+    final sessionSnap = await _db
+        .collection('contracts')
+        .doc(contractId)
+        .collection('sessions')
+        .get();
+    final batch = _db.batch();
+    for (final doc in sessionSnap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+
+    // 2. Delete scheduled_messages for this contract.
+    final msgSnap = await _db
+        .collection('scheduled_messages')
+        .where('contract_id', isEqualTo: contractId)
+        .get();
+    final msgBatch = _db.batch();
+    for (final doc in msgSnap.docs) {
+      msgBatch.delete(doc.reference);
+    }
+    await msgBatch.commit();
+
+    // 3. Delete the contract document itself.
+    await _db.collection('contracts').doc(contractId).delete();
   }
 
   /// Resets all `pending_approval` ScheduledMessage docs for a given contract + session date key

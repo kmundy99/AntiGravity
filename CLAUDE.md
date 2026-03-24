@@ -82,7 +82,7 @@ Notifications are fire-and-forget writes to Firestore queues:
 Merges to `main` automatically deploy the web build to Firebase Hosting (tennis-app-mp-2026 / www.finapps.com) via GitHub Actions. PRs get a preview URL via a separate workflow.
 
 ### Firestore Security Rules
-Current rules grant open read/write access expiring **March 18, 2026** (`firestore.rules`). Plan to tighten before that date.
+Rules require Firebase Auth (`request.auth != null`) for all reads and writes. Users collection additionally checks `auth.uid in auth_uids`. All other collections (contracts, matches, scheduled_messages) allow any authenticated user to write — sufficient for beta. Tighten to owner-only writes before public launch.
 
 ### Firebase Project
 Project ID: `tennis-app-mp-2026`. Configuration is in `lib/firebase_options.dart` and `lib/secrets.dart`.

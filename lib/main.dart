@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,6 +22,7 @@ import 'screens/complete_profile_screen.dart';
 import 'screens/contract_sub_in_screen.dart';
 import 'screens/availability_setup_screen.dart';
 import 'screens/contract_session_grid_screen.dart';
+import 'screens/admin_settings_screen.dart';
 import 'services/firebase_service.dart';
 
 import 'screens/match_chat_screen.dart';
@@ -33,6 +35,7 @@ import 'widgets/weekly_availability_matrix.dart';
 
 import 'services/location_service.dart';
 import 'screens/integrated_create_match_screen.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -170,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _cachedDisplayName = 'Player'; // Offline fallback
   bool _isEditingProfile = false;
   bool _isQuickSetup = false;
+  bool _isRefreshingLeagueDirectory = false;
   final _phoneCtrl = TextEditingController();
   int _selectedIndex = 0;
 
@@ -284,6 +288,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initAppLinks() async {
+    // On web, the email sign-in link is the browser's current URL — app_links
+    // never fires on web, so we check Uri.base directly.
+    if (kIsWeb) {
+      _handleLink(Uri.base);
+      return;
+    }
+
     _appLinks = AppLinks();
     try {
       final initialLink = await _appLinks.getInitialLink();
@@ -636,6 +647,33 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadUser();
   }
 
+  Future<void> _refreshLeagueDirectory() async {
+    setState(() => _isRefreshingLeagueDirectory = true);
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'refresh_team_names',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      );
+      await callable.call({});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('League directory refreshed.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Refresh failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshingLeagueDirectory = false);
+    }
+  }
+
   Future<void> _pickBlackout() async {
     final now = DateTime.now();
     final range = await showDateRangePicker(
@@ -705,6 +743,45 @@ class _HomeScreenState extends State<HomeScreen> {
                 foregroundColor: Colors.white,
               ),
               child: const Text("Complete Profile"),
+            ),
+          if (_user?.isAdmin == true)
+            // Settings screen link for admins
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings),
+              tooltip: 'Admin Settings',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminSettingsScreen()),
+                );
+              },
+            ),
+          // Admin popup for the Contract / Leagues tab
+          if (_selectedIndex == 3)
+            PopupMenuButton<String>(
+              icon: _isRefreshingLeagueDirectory
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.manage_accounts_outlined),
+              tooltip: 'Admin',
+              onSelected: (value) {
+                if (value == 'refresh_league') _refreshLeagueDirectory();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'refresh_league',
+                  child: ListTile(
+                    leading: Icon(Icons.cloud_sync_outlined),
+                    title: Text('Refresh League Directory'),
+                    subtitle: Text('Scrapes all leagues & divisions'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -815,6 +892,7 @@ class _HomeScreenState extends State<HomeScreen> {
           currentUserUid: _myUid ?? '',
           organizerName: _user?.displayName ?? '',
           organizerEmail: _user?.email ?? '',
+          organizerPin: _user?.organizerPin ?? '',
           playerContracts: _playerContracts
               .where((c) => c.organizerId != _myUid)
               .toList(),
@@ -1041,7 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final contract in _playerContracts) {
       final sessions = _contractSessions[contract.id] ?? [];
       for (final session in sessions) {
-        final status = session.assignment[_myUid!];
+        final status = session.assignmentStatus(_myUid!);
         if (status != 'confirmed' && status != 'reserve') continue;
         final isReserve = status == 'reserve';
         final start = DateTime(
