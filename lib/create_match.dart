@@ -327,9 +327,8 @@ class _CreateMatchScreenState extends State<CreateMatchScreen> {
                 MaterialPageRoute(
                   builder: (context) => SelectPlayersScreen(
                     currentUserUid: _currentUserUid!,
-                    // UUID MIGRATION: Use user.uid (UUID) for deduplication
-                    alreadyInRosterUids: _selectedRecruits
-                        .map((u) => u.uid)
+                    existingRoster: _selectedRecruits
+                        .map((u) => Roster(uid: u.uid, displayName: u.displayName, status: RosterStatus.accepted))
                         .toList(),
                     targetLocation: _selectedAddress.isNotEmpty ? _selectedAddress : null,
                   ),

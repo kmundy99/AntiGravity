@@ -178,16 +178,88 @@ class NotificationService {
   }
 
   // ===========================================================================
+  // CONTENT BUILDERS (generate without sending)
+  // ===========================================================================
+
+  /// Builds the invite email content for preview/editing.
+  /// [bodyTemplate] uses `{link}` as a placeholder for the personalized join link.
+  static ({String subject, String bodyTemplate}) buildInviteTemplate({
+    required Match match,
+    required String matchId,
+    required String organizerName,
+  }) {
+    final orgName = cleanName(organizerName);
+    final dateTime = formatDateTime(match);
+    final confirmedPlayers = match.roster
+        .where((r) => r.status == RosterStatus.accepted)
+        .map((r) => cleanName(r.displayName))
+        .toList();
+    final playersStr = confirmedPlayers.isNotEmpty
+        ? confirmedPlayers.join(', ')
+        : 'No confirmed players yet';
+    final bodyTemplate =
+        "$orgName invited you to a match on $dateTime! "
+        "Location: ${match.location}. "
+        "Confirmed players: $playersStr. "
+        "Join here: {link}";
+    return (subject: 'Tennis Invite: $dateTime', bodyTemplate: bodyTemplate);
+  }
+
+  /// Builds the removal email content for preview/editing.
+  static ({String subject, String textBody}) buildRemovalContent({
+    required Match match,
+    required String organizerName,
+    String? reason,
+  }) {
+    final orgName = cleanName(organizerName);
+    final dateTime = formatDateTime(match);
+    var textBody =
+        "You have been removed from the tennis match on $dateTime "
+        "organized by $orgName.";
+    if (reason != null && reason.isNotEmpty) textBody += " Reason: $reason";
+    return (subject: 'Match Update: Removed from Roster', textBody: textBody);
+  }
+
+  /// Builds the cancellation email content for preview/editing.
+  static ({String subject, String textBody}) buildCancellationContent({
+    required Match match,
+    required String organizerName,
+    required String reason,
+  }) {
+    final orgName = cleanName(organizerName);
+    final dateTime = formatDateTime(match);
+    final dateStr = _formatDate(match);
+    final textBody =
+        "Match Canceled! $orgName has canceled the tennis match on $dateTime. "
+        "Reason: $reason";
+    return (subject: 'Match Canceled: $dateStr', textBody: textBody);
+  }
+
+  /// Sends a pre-built (possibly user-edited) message to a single UID.
+  static Future<void> sendBuilt({
+    required String uid,
+    required String subject,
+    required String textBody,
+  }) async {
+    final htmlBody = '<p>${textBody.replaceAll('\n', '<br/>')}</p>';
+    await _send(uid: uid, subject: subject, textBody: textBody, htmlBody: htmlBody);
+  }
+
+  // ===========================================================================
   // PUBLIC METHODS
   // ===========================================================================
 
   /// Sends a match invitation. [contact] is the player's UUID.
+  /// Pass [customSubject] and [customBodyTemplate] (with `{link}` token) to
+  /// override the default generated content.
   static Future<void> sendInvite({
     required String contact,
     required Match match,
     required String matchId,
     required String organizerName,
     required bool isSms, // kept for API compatibility
+    String? customSubject,
+    String? customBodyTemplate,
   }) async {
     final link = _matchLink(matchId, uid: contact);
     final orgName = cleanName(organizerName);
@@ -201,14 +273,19 @@ class NotificationService {
         ? confirmedPlayers.join(', ')
         : 'No confirmed players yet';
 
-    final textBody =
+    final defaultTextBody =
         "$orgName invited you to a match on $dateTime! "
         "Location: ${match.location}. "
         "Confirmed players: $playersStr. "
         "Join here: $link";
 
-    final htmlBody =
-        """
+    final textBody = customBodyTemplate != null
+        ? customBodyTemplate.replaceAll('{link}', link)
+        : defaultTextBody;
+
+    final htmlBody = customBodyTemplate != null
+        ? '<p>${textBody.replaceAll('\n', '<br/>')}</p>'
+        : """
       <h3>You've been invited to a Tennis Match!</h3>
       <p><b>Organizer:</b> $orgName</p>
       <p><b>Date & Time:</b> $dateTime</p>
@@ -220,9 +297,10 @@ class NotificationService {
 
     await _send(
       uid: contact,
-      subject: 'Tennis Invite: $dateTime',
+      subject: customSubject ?? 'Tennis Invite: $dateTime',
       textBody: textBody,
       htmlBody: htmlBody,
+      ignoreNotifActive: true, // organizer explicitly invited this person
     );
   }
 
@@ -260,6 +338,7 @@ class NotificationService {
       subject: 'Match Update: Removed from Roster',
       textBody: textBody,
       htmlBody: htmlBody,
+      ignoreNotifActive: true,
     );
   }
 
@@ -365,6 +444,7 @@ class NotificationService {
             subject: 'Match Canceled: $dateStr',
             textBody: textBody,
             htmlBody: htmlBody,
+            ignoreNotifActive: true,
           ),
         );
       }

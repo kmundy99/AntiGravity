@@ -29,12 +29,15 @@ import 'screens/match_chat_screen.dart';
 import 'services/match_service.dart';
 import 'utils/email_error_checker.dart';
 import 'utils/calendar_export.dart';
+import 'utils/email_preview.dart';
 import 'utils/availability_utils.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'widgets/weekly_availability_matrix.dart';
 
 import 'services/location_service.dart';
+import 'services/notification_service.dart';
 import 'screens/integrated_create_match_screen.dart';
+import 'screens/select_players_screen.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 void main() async {
@@ -259,32 +262,44 @@ class _HomeScreenState extends State<HomeScreen> {
         )
         .orderBy('match_date')
         .snapshots()
-        .listen((snap) {
-          if (!mounted) return;
-          setState(() {
-            _allMatches = snap.docs;
-          });
-          _loadChatReads(snap.docs);
-          _refreshCalendarData();
-        });
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            setState(() {
+              _allMatches = snap.docs;
+            });
+            _loadChatReads(snap.docs);
+            _refreshCalendarData();
+          },
+          onError: (e) {
+            // Suppress transient permission-denied errors on startup (auth not yet restored).
+            // Firestore will automatically retry once the auth token is available.
+            if (e.toString().contains('permission-denied')) return;
+          },
+        );
 
     _usersSub = FirebaseFirestore.instance
         .collection('users')
         .snapshots()
-        .listen((snap) {
-          if (!mounted) return;
-          setState(() {
-            final users =
-                snap.docs
-                    .map((d) => User.fromFirestore(d))
-                    .where((u) => u.displayName.trim().isNotEmpty)
-                    .toList()
-                  ..sort((a, b) => a.displayName.compareTo(b.displayName));
-            _allUsersData = users;
-            _allUsers = users.map((u) => u.displayName).toSet().toList()
-              ..sort();
-          });
-        });
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            setState(() {
+              final users =
+                  snap.docs
+                      .map((d) => User.fromFirestore(d))
+                      .where((u) => u.displayName.trim().isNotEmpty)
+                      .toList()
+                    ..sort((a, b) => a.displayName.compareTo(b.displayName));
+              _allUsersData = users;
+              _allUsers = users.map((u) => u.displayName).toSet().toList()
+                ..sort();
+            });
+          },
+          onError: (e) {
+            if (e.toString().contains('permission-denied')) return;
+          },
+        );
   }
 
   Future<void> _initAppLinks() async {
@@ -1553,8 +1568,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool isOrganizer = match.organizerId == _myUid;
 
     if (!mounted) return;
+    final homeCtx = context; // HomeScreen context — survives dialog dismissal
     showDialog(
-      context: context,
+      context: homeCtx,
       builder: (context) => AlertDialog(
         title: Text(match.location),
         content: Column(
@@ -1568,7 +1584,136 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 10),
             Text("Level: ${match.minNtrp} - ${match.maxNtrp}"),
             Text("Players: $acceptedCount/${match.requiredCount}"),
-            if (acceptedCount > 0)
+            if (isOrganizer && match.roster.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Players:",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    ...match.roster
+                        .where((r) => r.uid != match.organizerId)
+                        .map((r) {
+                          final String cleanName = r.displayName.replaceAll(' (You)', '');
+                          final (IconData icon, Color color, String label) statusInfo = switch (r.status) {
+                            RosterStatus.accepted  => (Icons.check_circle, Colors.green, 'Accepted'),
+                            RosterStatus.invited   => (Icons.schedule, Colors.orange, 'Invited'),
+                            RosterStatus.declined  => (Icons.cancel, Colors.red, 'Declined'),
+                            RosterStatus.waitlisted => (Icons.hourglass_empty, Colors.grey, 'Waitlisted'),
+                          };
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              children: [
+                                Icon(statusInfo.$1, size: 16, color: statusInfo.$2),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(cleanName),
+                                ),
+                                Text(
+                                  statusInfo.$3,
+                                  style: TextStyle(fontSize: 11, color: statusInfo.$2),
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                                  tooltip: 'Remove player',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () {
+                                    final reasonCtrl = TextEditingController();
+                                    showDialog(
+                                      context: context,
+                                      builder: (removeCtx) => AlertDialog(
+                                        title: Text('Remove $cleanName'),
+                                        content: TextField(
+                                          controller: reasonCtrl,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Reason (optional)',
+                                            hintText: 'e.g. Schedule conflict',
+                                          ),
+                                          autofocus: true,
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(removeCtx),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            onPressed: () async {
+                                              final reason = reasonCtrl.text.trim();
+                                              if (removeCtx.mounted) Navigator.pop(removeCtx);
+                                              if (!homeCtx.mounted) return;
+
+                                              // Remove from roster
+                                              final newRoster = match.roster
+                                                  .where((e) => e.uid != r.uid)
+                                                  .toList();
+                                              await FirebaseFirestore.instance
+                                                  .collection('matches')
+                                                  .doc(matchId)
+                                                  .update({'roster': newRoster.map((e) => e.toMap()).toList()});
+
+                                              // Show email preview for invited/accepted players
+                                              if (homeCtx.mounted &&
+                                                  (r.status == RosterStatus.accepted ||
+                                                   r.status == RosterStatus.invited)) {
+                                                final orgName = match.roster
+                                                    .firstWhere(
+                                                      (e) => e.uid == match.organizerId,
+                                                      orElse: () => Roster(uid: '', displayName: 'Organizer', status: RosterStatus.accepted),
+                                                    )
+                                                    .displayName;
+                                                final draft = NotificationService.buildRemovalContent(
+                                                  match: match,
+                                                  organizerName: orgName,
+                                                  reason: reason.isNotEmpty ? reason : null,
+                                                );
+                                                final preview = await showEmailPreviewDialog(
+                                                  context: homeCtx,
+                                                  subject: draft.subject,
+                                                  body: draft.textBody,
+                                                  recipientLabel: cleanName,
+                                                );
+                                                if (preview != null && preview.send) {
+                                                  await NotificationService.sendBuilt(
+                                                    uid: r.uid,
+                                                    subject: preview.subject,
+                                                    textBody: preview.body,
+                                                  );
+                                                }
+                                              }
+
+                                              if (context.mounted) Navigator.pop(context);
+                                              if (homeCtx.mounted) {
+                                                ScaffoldMessenger.of(homeCtx).showSnackBar(
+                                                  SnackBar(content: Text('$cleanName removed.')),
+                                                );
+                                              }
+                                            },
+                                            child: const Text('Remove'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                  ],
+                ),
+              )
+            else if (!isOrganizer && acceptedCount > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                 child: Column(
@@ -1744,27 +1889,179 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ],
-          if (isOrganizer)
-            ElevatedButton(
+          if (isOrganizer) ...[
+            ElevatedButton.icon(
+              icon: const Icon(Icons.person_add),
+              label: const Text("Invite"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple.shade500,
+                backgroundColor: Colors.blue.shade600,
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
-                Navigator.pop(context);
-                await Navigator.push(
-                  context,
+                Navigator.pop(context); // close dialog
+                final List<User>? selectedUsers = await Navigator.push(
+                  homeCtx,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        OrganizerDashboardScreen(matchId: matchId),
+                    builder: (ctx) => SelectPlayersScreen(
+                      currentUserUid: match.organizerId,
+                      existingRoster: match.roster,
+                      targetLocation: match.location,
+                    ),
                   ),
                 );
-                // Re-fetch chat reads — they may or may not have opened chat
-                // from the dashboard, so we can't assume they've read it.
-                _loadChatReads(_allMatches);
+
+                if (selectedUsers != null && selectedUsers.isNotEmpty && homeCtx.mounted) {
+                  final orgName = match.roster
+                      .firstWhere(
+                        (r) => r.uid == match.organizerId,
+                        orElse: () => Roster(
+                          uid: '',
+                          displayName: 'Organizer',
+                          status: RosterStatus.accepted,
+                        ),
+                      )
+                      .displayName;
+
+                  final template = NotificationService.buildInviteTemplate(
+                    match: match,
+                    matchId: matchId,
+                    organizerName: orgName,
+                  );
+                  final n = selectedUsers.length;
+                  final preview = await showEmailPreviewDialog(
+                    context: homeCtx,
+                    subject: template.subject,
+                    body: template.bodyTemplate.replaceAll('{link}', '[invite link]'),
+                    recipientLabel: '$n player${n == 1 ? '' : 's'}',
+                    sendLabel: 'Send Invites',
+                    skipLabel: 'Add Without Notifying',
+                  );
+                  if (preview == null || !homeCtx.mounted) return;
+
+                  await MatchService.addPlayersToMatch(
+                    context: homeCtx,
+                    match: match,
+                    matchId: matchId,
+                    newRecruits: selectedUsers,
+                    organizerName: orgName,
+                    skipNotifications: !preview.send,
+                    customInviteSubject: preview.send ? preview.subject : null,
+                    customInviteBodyTemplate: preview.send
+                        ? preview.body.replaceAll('[invite link]', '{link}')
+                        : null,
+                  );
+                }
               },
-              child: const Text("Manage (Organizer)"),
             ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.cancel),
+              label: const Text("Cancel Match"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade100,
+                foregroundColor: Colors.red.shade900,
+              ),
+              onPressed: () {
+                Navigator.pop(context); // close Match dialog
+                showDialog(
+                  context: homeCtx,
+                  builder: (dialogContext) {
+                    final reasonCtrl = TextEditingController();
+                    return AlertDialog(
+                      title: const Text("Cancel Match"),
+                      content: TextField(
+                        controller: reasonCtrl,
+                        decoration: const InputDecoration(
+                          labelText: "Reason for cancellation",
+                        ),
+                        autofocus: true,
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text("Abort"),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            if (reasonCtrl.text.isEmpty) return;
+                            final reason = reasonCtrl.text;
+                            final orgName = match.roster
+                                .firstWhere(
+                                  (r) => r.uid == match.organizerId,
+                                  orElse: () => Roster(
+                                    uid: '',
+                                    displayName: 'Organizer',
+                                    status: RosterStatus.accepted,
+                                  ),
+                                )
+                                .displayName;
+
+                            if (dialogContext.mounted) Navigator.pop(dialogContext);
+                            if (!homeCtx.mounted) return;
+
+                            final notifyPlayers = match.roster
+                                .where((r) =>
+                                    r.uid != match.organizerId &&
+                                    r.uid.isNotEmpty &&
+                                    (r.status == RosterStatus.accepted ||
+                                     r.status == RosterStatus.invited))
+                                .toList();
+
+                            // Show email preview if there are players to notify
+                            ({bool send, String subject, String body})? preview;
+                            if (notifyPlayers.isNotEmpty) {
+                              final draft = NotificationService.buildCancellationContent(
+                                match: match,
+                                organizerName: orgName,
+                                reason: reason,
+                              );
+                              preview = await showEmailPreviewDialog(
+                                context: homeCtx,
+                                subject: draft.subject,
+                                body: draft.textBody,
+                                recipientLabel: '${notifyPlayers.length} player${notifyPlayers.length == 1 ? '' : 's'}',
+                                sendLabel: 'Send & Cancel Match',
+                                skipLabel: 'Cancel Match Without Notifying',
+                              );
+                              if (preview == null) return; // user dismissed = abort
+                            }
+
+                            // Delete the match
+                            await FirebaseFirestore.instance
+                                .collection('matches')
+                                .doc(matchId)
+                                .delete();
+
+                            // Send notifications if requested
+                            if (preview != null && preview.send) {
+                              final futures = notifyPlayers.map((r) =>
+                                NotificationService.sendBuilt(
+                                  uid: r.uid,
+                                  subject: preview!.subject,
+                                  textBody: preview.body,
+                                ),
+                              );
+                              await Future.wait(futures, eagerError: false);
+                            }
+
+                            if (homeCtx.mounted) {
+                              ScaffoldMessenger.of(homeCtx).showSnackBar(
+                                const SnackBar(content: Text("Match permanently canceled.")),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text("Confirm Cancel"),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ],
           if (isJoined || isOrganizer)
             ElevatedButton.icon(
               icon: Badge(

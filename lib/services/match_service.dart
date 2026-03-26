@@ -16,6 +16,9 @@ class MatchService {
     required String matchId,
     required List<User> newRecruits,
     required String organizerName,
+    bool skipNotifications = false,
+    String? customInviteSubject,
+    String? customInviteBodyTemplate,
   }) async {
     if (newRecruits.isEmpty) return;
 
@@ -56,19 +59,23 @@ class MatchService {
       'roster': FieldValue.arrayUnion(mapsToAdd),
     });
 
-    final futures = <Future>[];
-    for (final entry in newRosterEntries) {
-      futures.add(
-        NotificationService.sendInvite(
-          contact: entry.uid, // UUID
-          match: match,
-          matchId: matchId,
-          organizerName: organizerName,
-          isSms: false, // kept for API compatibility; _send() handles routing
-        ),
-      );
+    if (!skipNotifications) {
+      final futures = <Future>[];
+      for (final entry in newRosterEntries) {
+        futures.add(
+          NotificationService.sendInvite(
+            contact: entry.uid,
+            match: match,
+            matchId: matchId,
+            organizerName: organizerName,
+            isSms: false,
+            customSubject: customInviteSubject,
+            customBodyTemplate: customInviteBodyTemplate,
+          ),
+        );
+      }
+      await Future.wait(futures, eagerError: false);
     }
-    await Future.wait(futures, eagerError: false);
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

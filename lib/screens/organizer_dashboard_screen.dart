@@ -380,9 +380,7 @@ class _OrganizerDashboardScreenState extends State<OrganizerDashboardScreen> {
                     MaterialPageRoute(
                       builder: (context) => SelectPlayersScreen(
                         currentUserUid: _match!.organizerId,
-                        alreadyInRosterUids: _match!.roster
-                            .map((r) => r.uid)
-                            .toList(),
+                        existingRoster: _match!.roster,
                         targetLocation: _match!.location,
                       ),
                     ),

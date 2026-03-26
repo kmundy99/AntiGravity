@@ -8,7 +8,7 @@ import '../models.dart';
 import '../secrets.dart';
 import '../services/match_service.dart';
 import '../services/location_service.dart';
-import '../utils/availability_utils.dart';
+import '../widgets/player_selection_panel.dart';
 
 class IntegratedCreateMatchScreen extends StatefulWidget {
   final DateTime prefillDate;
@@ -39,11 +39,6 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
   String? _currentUserUid;
   String _organizerName = 'Organizer (You)';
   User? _currentUser;
-  
-  // Filter state for LOV
-  int? _circleFilter;
-  double? _maxDistanceFilter;
-  bool _initializedDefaults = false;
 
   @override
   void initState() {
@@ -68,11 +63,6 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
           _organizerName = user.displayName;
           _minNtrp = 0.0;
           _currentUserUid = uid;
-          
-          if (!_initializedDefaults) {
-            _maxDistanceFilter = user.defaultDistanceFilter;
-            _initializedDefaults = true;
-          }
         });
       } else {
         setState(() => _currentUserUid = uid);
@@ -128,7 +118,20 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
     final isWide = MediaQuery.of(context).size.width > 800;
 
     Widget formContent = _buildFormColumn();
-    Widget lovContent = _buildPlayerLovColumn();
+    Widget lovContent = PlayerSelectionPanel(
+      currentUser: _currentUser!,
+      currentUserUid: _currentUserUid!,
+      targetLocation: _selectedAddress,
+      targetSlot: _currentSlot,
+      onSelectionChanged: (uids, users) {
+        setState(() {
+          _selectedRecruitUids.clear();
+          _selectedRecruitUids.addAll(uids);
+          _selectedRecruits.clear();
+          _selectedRecruits.addAll(users);
+        });
+      },
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -395,232 +398,6 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
             onChanged: (val) => setState(() => _minNtrp = val!),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildPlayerLovColumn() {
-    return Column(
-      children: [
-        // LOV Filters Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Colors.blue.shade50,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                "Invite Players",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("Circle", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        DropdownButton<int?>(
-                          isExpanded: true,
-                          isDense: true,
-                          value: _circleFilter,
-                          items: const [
-                            DropdownMenuItem(value: null, child: Text('All', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 1, child: Text('Circle 1', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 2, child: Text('Circle 2', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 3, child: Text('Circle 3', style: TextStyle(fontSize: 13))),
-                          ],
-                          onChanged: (val) => setState(() => _circleFilter = val),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("Max Distance", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        DropdownButton<double>(
-                          isExpanded: true,
-                          isDense: true,
-                          value: _maxDistanceFilter ?? 10.0,
-                          items: const [
-                            DropdownMenuItem(value: 3.0, child: Text('3m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 5.0, child: Text('5m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 10.0, child: Text('10m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 15.0, child: Text('15m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 20.0, child: Text('20m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 30.0, child: Text('30m', style: TextStyle(fontSize: 13))),
-                            DropdownMenuItem(value: 1000.0, child: Text('Any', style: TextStyle(fontSize: 13))),
-                          ],
-                          onChanged: (val) async {
-                            if (val != null) {
-                              setState(() => _maxDistanceFilter = val);
-                              if (_currentUserUid != null) {
-                                await FirebaseFirestore.instance
-                                  .collection('users')
-                                  .doc(_currentUserUid)
-                                  .update({'defaultDistanceFilter': val});
-                              }
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              if (_selectedAddress.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    "⚠️ Enter a court location on the left to activate distance filtering.",
-                    style: TextStyle(color: Colors.orange, fontSize: 11),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        
-        // Player List Stream
-        Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('users').snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              
-              final allDocs = snapshot.data!.docs;
-              
-              // Apply basic filters
-              final filteredUsers = allDocs.where((doc) {
-                if (doc.id == _currentUserUid) return false;
-                final u = User.fromFirestore(doc);
-                if (u.displayName.isEmpty) return false;
-                if (_minNtrp > 0.0 && u.ntrpLevel < _minNtrp) return false;
-                if (_circleFilter != null && _currentUser!.circleRatings[doc.id] != _circleFilter) return false;
-                
-                // Distance filtering
-                if (_selectedAddress.isNotEmpty && _maxDistanceFilter != null && _maxDistanceFilter! < 1000) {
-                  final dist = LocationService().getDistanceBetweenAddresses(_selectedAddress, u.address);
-                  if (dist != null && dist > _maxDistanceFilter!) return false;
-                }
-                return true;
-              }).map((d) => User.fromFirestore(d)).toList();
-
-              // Group by availability
-              final available = <User>[];
-              final away = <User>[];
-              final unknown = <User>[];
-
-              for (final u in filteredUsers) {
-                switch (AvailabilityUtils.playerAvailability(u, _currentSlot)) {
-                  case AvailabilityStatus.available:
-                    available.add(u);
-                  case AvailabilityStatus.away:
-                    away.add(u);
-                  case AvailabilityStatus.unknown:
-                    unknown.add(u);
-                }
-              }
-
-              return ListView(
-                padding: const EdgeInsets.only(bottom: 100, top: 4),
-                children: [
-                  _buildLovSection("Available", available, Colors.green.shade700),
-                  _buildLovSection("Not set", unknown, Colors.grey.shade700),
-                  _buildLovSection("Away", away, Colors.red.shade700),
-                  if (available.isEmpty && unknown.isEmpty && away.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20.0),
-                      child: Text("No players match your filters.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLovSection(String title, List<User> players, Color color) {
-    if (players.isEmpty) return const SizedBox.shrink();
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(
-            title,
-            style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13),
-          ),
-        ),
-        ...players.map((u) {
-          final isSelected = _selectedRecruitUids.contains(u.uid);
-          final circle = _currentUser!.circleRatings[u.uid];
-          
-          final double? distFromCourt = _selectedAddress.isNotEmpty
-              ? LocationService().getDistanceBetweenAddresses(_selectedAddress, u.address)
-              : null;
-          final double? distFromHome = (_currentUser!.address.isNotEmpty)
-              ? LocationService().getDistanceBetweenAddresses(_currentUser!.address, u.address)
-              : null;
-          final double? distToShow = distFromCourt ?? distFromHome;
-          final String distLabel = distFromCourt != null ? 'mi from court' : 'mi from home';
-          final String distText = distToShow != null ? ' • ${distToShow.toStringAsFixed(1)} $distLabel' : '';
-
-          return ListTile(
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            leading: CircleAvatar(
-              radius: 16,
-              child: Text(u.displayName.isNotEmpty ? u.displayName[0].toUpperCase() : '?'),
-            ),
-            title: Text(u.displayName, style: const TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: Text("NTRP: ${u.ntrpLevel == 0.0 ? '—' : u.ntrpLevel}$distText"),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (circle != null)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                    child: Text("C$circle", style: TextStyle(color: Colors.blue.shade900, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                Checkbox(
-                  value: isSelected,
-                  visualDensity: VisualDensity.compact,
-                  onChanged: (val) {
-                    setState(() {
-                      if (val == true) {
-                        _selectedRecruitUids.add(u.uid);
-                        _selectedRecruits.add(u);
-                      } else {
-                        _selectedRecruitUids.remove(u.uid);
-                        _selectedRecruits.removeWhere((r) => r.uid == u.uid);
-                      }
-                    });
-                  },
-                ),
-              ],
-            ),
-            onTap: () {
-              setState(() {
-                if (isSelected) {
-                  _selectedRecruitUids.remove(u.uid);
-                  _selectedRecruits.removeWhere((r) => r.uid == u.uid);
-                } else {
-                  _selectedRecruitUids.add(u.uid);
-                  _selectedRecruits.add(u);
-                }
-              });
-            },
-          );
-        }),
       ],
     );
   }

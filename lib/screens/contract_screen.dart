@@ -106,7 +106,11 @@ class _ContractScreenState extends State<ContractScreen> {
       MaterialPageRoute(
         builder: (_) => SelectPlayersScreen(
           currentUserUid: widget.currentUserUid,
-          alreadyInRosterUids: contract.roster.map((p) => p.uid).toList(),
+          existingRoster: contract.roster.map((p) => Roster(
+            uid: p.uid,
+            displayName: p.displayName,
+            status: RosterStatus.accepted,
+          )).toList(),
           targetLocation: contract.clubAddress,
         ),
       ),
