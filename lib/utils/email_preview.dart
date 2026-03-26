@@ -70,7 +70,7 @@ Future<({bool send, String subject, String body})?> showEmailPreviewDialog({
             ctx,
             (send: false, subject: subjectCtrl.text, body: bodyCtrl.text),
           ),
-          child: Text(skipLabel, style: const TextStyle(color: Colors.grey)),
+          child: Text(skipLabel),
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(

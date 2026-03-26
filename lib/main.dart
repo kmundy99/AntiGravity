@@ -1653,19 +1653,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                               if (removeCtx.mounted) Navigator.pop(removeCtx);
                                               if (!homeCtx.mounted) return;
 
-                                              // Remove from roster
-                                              final newRoster = match.roster
-                                                  .where((e) => e.uid != r.uid)
-                                                  .toList();
-                                              await FirebaseFirestore.instance
-                                                  .collection('matches')
-                                                  .doc(matchId)
-                                                  .update({'roster': newRoster.map((e) => e.toMap()).toList()});
-
-                                              // Show email preview for invited/accepted players
-                                              if (homeCtx.mounted &&
-                                                  (r.status == RosterStatus.accepted ||
-                                                   r.status == RosterStatus.invited)) {
+                                              // Show email preview BEFORE removing (for invited/accepted)
+                                              ({bool send, String subject, String body})? preview;
+                                              if (r.status == RosterStatus.accepted ||
+                                                  r.status == RosterStatus.invited) {
                                                 final orgName = match.roster
                                                     .firstWhere(
                                                       (e) => e.uid == match.organizerId,
@@ -1677,19 +1668,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   organizerName: orgName,
                                                   reason: reason.isNotEmpty ? reason : null,
                                                 );
-                                                final preview = await showEmailPreviewDialog(
+                                                preview = await showEmailPreviewDialog(
                                                   context: homeCtx,
                                                   subject: draft.subject,
                                                   body: draft.textBody,
                                                   recipientLabel: cleanName,
                                                 );
-                                                if (preview != null && preview.send) {
-                                                  await NotificationService.sendBuilt(
-                                                    uid: r.uid,
-                                                    subject: preview.subject,
-                                                    textBody: preview.body,
-                                                  );
+                                                if (preview == null) {
+                                                  // Cancel — do not remove player, return to match dialog
+                                                  if (homeCtx.mounted) _showMatchDetailsDialog(matchId);
+                                                  return;
                                                 }
+                                              }
+
+                                              // Remove from roster
+                                              final newRoster = match.roster
+                                                  .where((e) => e.uid != r.uid)
+                                                  .toList();
+                                              await FirebaseFirestore.instance
+                                                  .collection('matches')
+                                                  .doc(matchId)
+                                                  .update({'roster': newRoster.map((e) => e.toMap()).toList()});
+
+                                              if (preview != null && preview.send && homeCtx.mounted) {
+                                                await NotificationService.sendBuilt(
+                                                  uid: r.uid,
+                                                  subject: preview.subject,
+                                                  textBody: preview.body,
+                                                );
                                               }
 
                                               if (context.mounted) Navigator.pop(context);
@@ -1697,6 +1703,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 ScaffoldMessenger.of(homeCtx).showSnackBar(
                                                   SnackBar(content: Text('$cleanName removed.')),
                                                 );
+                                                _showMatchDetailsDialog(matchId);
                                               }
                                             },
                                             child: const Text('Remove'),
@@ -1936,7 +1943,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     sendLabel: 'Send Invites',
                     skipLabel: 'Add Without Notifying',
                   );
-                  if (preview == null || !homeCtx.mounted) return;
+                  if (preview == null) {
+                    // Cancelled — return to match dialog without adding
+                    if (homeCtx.mounted) _showMatchDetailsDialog(matchId);
+                    return;
+                  }
+                  if (!homeCtx.mounted) return;
 
                   await MatchService.addPlayersToMatch(
                     context: homeCtx,
@@ -1950,6 +1962,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? preview.body.replaceAll('[invite link]', '{link}')
                         : null,
                   );
+
+                  if (homeCtx.mounted) _showMatchDetailsDialog(matchId);
                 }
               },
             ),
