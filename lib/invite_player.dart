@@ -54,58 +54,66 @@ class _InvitePlayerScreenState extends State<InvitePlayerScreen> {
                   return;
                 }
 
-                // Check if a user with this email already exists
-                var existingQuery = await FirebaseFirestore.instance
-                    .collection('users')
-                    .where('primary_contact', isEqualTo: email)
-                    .limit(1)
-                    .get();
-
-                if (existingQuery.docs.isEmpty) {
-                  existingQuery = await FirebaseFirestore.instance
+                try {
+                  // Check if a user with this email already exists
+                  var existingQuery = await FirebaseFirestore.instance
                       .collection('users')
-                      .where('email', isEqualTo: email)
+                      .where('primary_contact', isEqualTo: email)
                       .limit(1)
                       .get();
-                }
 
-                if (existingQuery.docs.isNotEmpty) {
-                  // User already exists — update name if it was empty
-                  final existingDoc = existingQuery.docs.first;
-                  final existingData = existingDoc.data();
-                  if ((existingData['display_name'] ?? '').toString().isEmpty) {
-                    await existingDoc.reference.update({'display_name': name});
+                  if (existingQuery.docs.isEmpty) {
+                    existingQuery = await FirebaseFirestore.instance
+                        .collection('users')
+                        .where('email', isEqualTo: email)
+                        .limit(1)
+                        .get();
                   }
-                } else {
-                  // Create with auto-generated doc ID
-                  await FirebaseFirestore.instance.collection('users').add({
-                    'display_name': name,
-                    'primary_contact': email,
-                    'email': email,
-                    'accountStatus': 'provisional',
-                    'role': 'player',
-                    'createdAt': FieldValue.serverTimestamp(),
-                    'created_at': FieldValue.serverTimestamp(),
-                    if (widget.creatorUid != null)
-                      'created_by_uid': widget.creatorUid,
-                  });
 
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Player added. Note: provisional accounts are auto-deleted after 30 days if the player never logs in.',
+                  if (existingQuery.docs.isNotEmpty) {
+                    // User already exists — update name if it was empty
+                    final existingDoc = existingQuery.docs.first;
+                    final existingData = existingDoc.data();
+                    if ((existingData['display_name'] ?? '').toString().isEmpty) {
+                      await existingDoc.reference.update({'display_name': name});
+                    }
+                  } else {
+                    // Create with auto-generated doc ID
+                    await FirebaseFirestore.instance.collection('users').add({
+                      'display_name': name,
+                      'primary_contact': email,
+                      'email': email,
+                      'accountStatus': 'provisional',
+                      'role': 'player',
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'created_at': FieldValue.serverTimestamp(),
+                      if (widget.creatorUid != null)
+                        'created_by_uid': widget.creatorUid,
+                    });
+
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            'Player added. Note: provisional accounts are auto-deleted after 30 days if the player never logs in.',
+                          ),
+                          duration: const Duration(seconds: 6),
+                          action: SnackBarAction(label: 'OK', onPressed: () {}),
                         ),
-                        duration: const Duration(seconds: 6),
-                        action: SnackBarAction(label: 'OK', onPressed: () {}),
-                      ),
+                      );
+                    }
+                    return;
+                  }
+
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error adding player: $e')),
                     );
                   }
-                  return;
                 }
-
-                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('Add Custom Player'),
             ),

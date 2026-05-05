@@ -46,6 +46,7 @@ class User {
   final bool isAdmin;
   final double defaultDistanceFilter;
   final String organizerPin; // 4-digit PIN for contract management; '' = no gate
+  final String bio; // additional profile details
 
   User({
     this.uid = '',
@@ -69,6 +70,7 @@ class User {
     this.isAdmin = false,
     this.defaultDistanceFilter = 10.0,
     this.organizerPin = '',
+    this.bio = '',
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
@@ -121,6 +123,7 @@ class User {
       isAdmin: data['isAdmin'] ?? data['is_admin'] ?? false,
       defaultDistanceFilter: (data['defaultDistanceFilter'] ?? 10.0).toDouble(),
       organizerPin: data['organizer_pin'] as String? ?? '',
+      bio: data['bio'] ?? '',
     );
   }
 
@@ -141,9 +144,10 @@ class User {
       if (activatedAt != null) 'activated_at': activatedAt,
       if (weeklyAvailability.isNotEmpty) 'weekly_availability': weeklyAvailability,
       'blackouts': blackouts.map((b) => b.toMap()).toList(),
-      if (isAdmin) 'isAdmin': isAdmin,
+      if (isAdmin) 'is_admin': isAdmin,
       'defaultDistanceFilter': defaultDistanceFilter,
       if (organizerPin.isNotEmpty) 'organizer_pin': organizerPin,
+      'bio': bio,
     };
   }
 }
@@ -682,6 +686,7 @@ class ScheduledMessage {
   final bool autoSendEnabled; // if false, CF generates drafts but never sends (organizer must approve)
   final List<RenderedEmail> renderedEmails; // fully resolved per-player emails (set in pending_approval state)
   final DateTime? generatedAt; // when CF generated the rendered content
+  final String baseUrl; // used to link back to the correct instance (dev vs prod)
 
   ScheduledMessage({
     this.id = '',
@@ -698,6 +703,7 @@ class ScheduledMessage {
     this.autoSendEnabled = true,
     this.renderedEmails = const [],
     this.generatedAt,
+    this.baseUrl = 'https://www.adhoc-local.com',
   });
 
   factory ScheduledMessage.fromFirestore(DocumentSnapshot doc) {
@@ -721,6 +727,7 @@ class ScheduledMessage {
           ?.map((e) => RenderedEmail.fromMap(Map<String, dynamic>.from(e)))
           .toList() ?? [],
       generatedAt: (data['generated_at'] as Timestamp?)?.toDate(),
+      baseUrl: data['base_url'] ?? 'https://www.adhoc-local.com',
     );
   }
 
@@ -738,6 +745,7 @@ class ScheduledMessage {
     'auto_send_enabled': autoSendEnabled,
     'rendered_emails': renderedEmails.map((e) => e.toMap()).toList(),
     if (generatedAt != null) 'generated_at': Timestamp.fromDate(generatedAt!),
+    'base_url': baseUrl,
   };
 
   ScheduledMessage copyWith({

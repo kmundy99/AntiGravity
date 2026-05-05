@@ -5,8 +5,13 @@ import '../widgets/weekly_availability_matrix.dart';
 
 class AvailabilitySetupScreen extends StatefulWidget {
   final String playerUid;
+  final bool isAdminMode;
 
-  const AvailabilitySetupScreen({super.key, required this.playerUid});
+  const AvailabilitySetupScreen({
+    super.key,
+    required this.playerUid,
+    this.isAdminMode = false,
+  });
 
   @override
   State<AvailabilitySetupScreen> createState() => _AvailabilitySetupScreenState();
@@ -20,6 +25,20 @@ class _AvailabilitySetupScreenState extends State<AvailabilitySetupScreen> {
 
   User? _user;
   Map<String, List<String>> _weeklyAvailability = {};
+  
+  final _zipCodeCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  String _gender = 'Other';
+  double _ntrpLevel = 0.0;
+  
+  @override
+  void dispose() {
+    _zipCodeCtrl.dispose();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -49,6 +68,14 @@ class _AvailabilitySetupScreenState extends State<AvailabilitySetupScreen> {
       final user = User.fromFirestore(doc);
       _user = user;
       _weeklyAvailability = Map<String, List<String>>.from(user.weeklyAvailability);
+      _zipCodeCtrl.text = user.address;
+      _nameCtrl.text = user.displayName;
+      _phoneCtrl.text = user.phoneNumber;
+      _gender = user.gender.isNotEmpty ? user.gender : 'Other';
+      if (!['Male', 'Female', 'Non-Binary', 'Other'].contains(_gender)) {
+        _gender = 'Other';
+      }
+      _ntrpLevel = user.ntrpLevel;
 
       setState(() {
         _isLoading = false;
@@ -66,6 +93,11 @@ class _AvailabilitySetupScreenState extends State<AvailabilitySetupScreen> {
     try {
       await FirebaseFirestore.instance.collection('users').doc(widget.playerUid).update({
         'weekly_availability': _weeklyAvailability,
+        'address': _zipCodeCtrl.text.trim(),
+        'display_name': _nameCtrl.text.trim(),
+        'phone_number': _phoneCtrl.text.trim(),
+        'gender': _gender,
+        'ntrp_level': _ntrpLevel,
       });
 
       setState(() {
@@ -84,7 +116,7 @@ class _AvailabilitySetupScreenState extends State<AvailabilitySetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("My Availability"),
+        title: Text(widget.isAdminMode ? "Edit Player Availability" : "My Availability"),
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
       ),
@@ -156,6 +188,82 @@ class _AvailabilitySetupScreenState extends State<AvailabilitySetupScreen> {
                     const Text(
                       "Select all the typical times you are available to play tennis. This helps organizers schedule matches more effectively without having to ask you every time.",
                       style: TextStyle(fontSize: 16, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: _zipCodeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: "Zip Code",
+                        hintText: "Enter your zip code to get invited to nearby matches",
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    ExpansionTile(
+                      title: const Text("Additional Profile Details (Optional)", style: TextStyle(fontWeight: FontWeight.bold)),
+                      leading: const Icon(Icons.person),
+                      childrenPadding: const EdgeInsets.all(16),
+                      children: [
+                        TextField(
+                          controller: _nameCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Display Name",
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _phoneCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Phone Number",
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 16),
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Gender',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _gender,
+                              isDense: true,
+                              isExpanded: true,
+                              items: ['Male', 'Female', 'Non-Binary', 'Other']
+                                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                                  .toList(),
+                              onChanged: (v) => setState(() => _gender = v!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'NTRP Level',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<double>(
+                              value: _ntrpLevel,
+                              isDense: true,
+                              isExpanded: true,
+                              items: [0.0, 3.0, 3.5, 4.0, 4.5, 5.0]
+                                  .map((v) => DropdownMenuItem(
+                                        value: v,
+                                        child: Text(v == 0.0 ? 'Not Rated' : 'Level $v'),
+                                      ))
+                                  .toList(),
+                              onChanged: (v) => setState(() => _ntrpLevel = v!),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
 

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/location_service.dart';
+import '../widgets/weekly_availability_matrix.dart';
 
 /// Standalone profile completion screen shown after a player responds to an
 /// availability request or match invite. Prompts for essential missing fields.
 /// Has a Close/Skip option so the player is never forced.
 class CompleteProfileScreen extends StatefulWidget {
   final String playerUid;
+  final bool isAdminMode;
 
-  const CompleteProfileScreen({super.key, required this.playerUid});
+  const CompleteProfileScreen({
+    super.key,
+    required this.playerUid,
+    this.isAdminMode = false,
+  });
 
   @override
   State<CompleteProfileScreen> createState() => _CompleteProfileScreenState();
@@ -20,6 +26,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _addressCtrl = TextEditingController();
   double _ntrp = 0.0;
   String _gender = 'Male';
+  Map<String, List<String>> _availability = {};
   bool _saving = false;
   bool _loaded = false;
 
@@ -53,6 +60,15 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     _gender = ['Male', 'Female', 'Non-Binary', 'Other'].contains(gender)
         ? gender
         : 'Male';
+    
+    if (data['weekly_availability'] != null) {
+      _availability = Map<String, List<String>>.from(
+        (data['weekly_availability'] as Map).map(
+          (k, v) => MapEntry(k as String, List<String>.from(v)),
+        ),
+      );
+    }
+    
     setState(() => _loaded = true);
   }
 
@@ -83,6 +99,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           'address': _addressCtrl.text.trim(),
         'ntrp_level': _ntrp,
         'gender': _gender,
+        'weekly_availability': _availability,
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -104,7 +121,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Complete Your Profile'),
+        title: Text(widget.isAdminMode ? 'Edit Player Profile' : 'Complete Your Profile'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           tooltip: 'Skip for now',
@@ -124,9 +141,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Help organizers and other players get to know you better.',
-                    style: TextStyle(color: Colors.black54),
+                  Text(
+                    widget.isAdminMode
+                        ? 'Update this player\'s record.'
+                        : 'Help organizers and other players get to know you better.',
+                    style: const TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 20),
                   TextField(
@@ -201,6 +220,15 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                         onChanged: (v) => setState(() => _ntrp = v!),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Weekly Availability', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('Select the times you generally prefer to play. This helps matchmakers find you!', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                  const SizedBox(height: 12),
+                  WeeklyAvailabilityMatrix(
+                    initialAvailability: _availability,
+                    onAvailabilityChanged: (val) => setState(() => _availability = val),
                   ),
                   const SizedBox(height: 32),
                   SizedBox(

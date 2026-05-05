@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../models.dart';
+import '../utils/link_utils.dart';
 
 class NotificationService {
   // ===========================================================================
@@ -165,7 +166,7 @@ class NotificationService {
 
   /// Builds the standard deep link for a match, optionally with a uid (UUID) for auto-login.
   static String _matchLink(String matchId, {String? uid}) {
-    final base = 'https://www.adhoc-local.com/#/match/$matchId';
+    final base = '${LinkUtils.getBaseUrl()}/#/match/$matchId';
     if (uid != null && uid.isNotEmpty) {
       return '$base?uid=${Uri.encodeComponent(uid)}';
     }
@@ -508,7 +509,7 @@ class NotificationService {
     required String organizerName,
     String? customBody,
   }) async {
-    final link = 'https://www.adhoc-local.com/#/contract/$contractId?uid=${Uri.encodeComponent(playerUid)}';
+    final link = '${LinkUtils.getBaseUrl()}/#/contract/$contractId?uid=${Uri.encodeComponent(playerUid)}';
 
     // textBody keeps the raw URL for SMS delivery
     final textBody = (customBody ?? contractInviteTemplate(
@@ -590,7 +591,7 @@ class NotificationService {
     final dateKey = '${sessionDate.year}-'
         '${sessionDate.month.toString().padLeft(2, '0')}-'
         '${sessionDate.day.toString().padLeft(2, '0')}';
-    final link = 'https://www.adhoc-local.com/#/availability/$contractId/$dateKey'
+    final link = '${LinkUtils.getBaseUrl()}/#/availability/$contractId/$dateKey'
         '?uid=${Uri.encodeComponent(playerUid)}';
 
     final textBody = (customBody ?? availabilityRequestTemplate(

@@ -11,6 +11,7 @@ import '../services/location_service.dart';
 import '../utils/message_templates.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../utils/link_utils.dart';
 
 class ContractSetupScreen extends StatefulWidget {
   final String? contractId;
@@ -618,6 +619,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
           recipients: recipients,
           recipientsFilter: 'no_response',
           autoSendEnabled: autoSend,
+          baseUrl: LinkUtils.getBaseUrl(),
         ));
       }
 
@@ -656,6 +658,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
           recipients: recipients,
           recipientsFilter: 'all',
           autoSendEnabled: autoSend,
+          baseUrl: LinkUtils.getBaseUrl(),
         ));
 
         // ── Availability reminder (N hours before lineup) ─────────────────
@@ -696,6 +699,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
             recipients: recipients,
             recipientsFilter: 'no_response',
             autoSendEnabled: autoSend,
+            baseUrl: LinkUtils.getBaseUrl(),
           ));
         }
       }
@@ -746,6 +750,7 @@ class _ContractSetupScreenState extends State<ContractSetupScreen> {
           recipients: recipients,
           recipientsFilter: 'unpaid',
           autoSendEnabled: autoSend,
+          baseUrl: LinkUtils.getBaseUrl(),
         ));
       }
       reminderDate = reminderDate.add(const Duration(days: 7));

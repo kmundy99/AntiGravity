@@ -8,6 +8,8 @@ import '../models.dart';
 import '../secrets.dart';
 import '../services/match_service.dart';
 import '../services/location_service.dart';
+import '../services/notification_service.dart';
+import '../utils/email_preview.dart';
 import '../widgets/player_selection_panel.dart';
 
 class IntegratedCreateMatchScreen extends StatefulWidget {
@@ -203,15 +205,34 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
                           displayName: _organizerName,
                           status: RosterStatus.accepted,
                         ),
-                        ..._selectedRecruits.map(
-                          (user) => Roster(
-                            uid: user.uid,
-                            displayName: user.displayName,
-                            status: RosterStatus.invited,
-                          ),
-                        ),
                       ],
                     );
+
+                    ({bool send, String subject, String body})? preview;
+                    
+                    if (_selectedRecruits.isNotEmpty && mounted) {
+                      final template = NotificationService.buildInviteTemplate(
+                        match: newMatch,
+                        matchId: 'temp', // Replaced with actual ID by backend/NotificationService
+                        organizerName: _organizerName,
+                      );
+                      
+                      final n = _selectedRecruits.length;
+                      preview = await showEmailPreviewDialog(
+                        context: context,
+                        subject: template.subject,
+                        body: template.bodyTemplate.replaceAll('{link}', '[invite link]'),
+                        recipientLabel: '$n player${n == 1 ? '' : 's'}',
+                        sendLabel: 'Send Invites & Create',
+                        skipLabel: 'Create Without Notifying',
+                      );
+                      
+                      if (preview == null) {
+                        // User cancelled
+                        setState(() => _isSaving = false);
+                        return;
+                      }
+                    }
 
                     try {
                       final docRef = await FirebaseFirestore.instance.collection('matches').add(newMatch.toFirestore());
@@ -223,6 +244,11 @@ class _IntegratedCreateMatchScreenState extends State<IntegratedCreateMatchScree
                           matchId: docRef.id,
                           newRecruits: _selectedRecruits,
                           organizerName: _organizerName,
+                          skipNotifications: preview != null ? !preview.send : false,
+                          customInviteSubject: preview?.send == true ? preview!.subject : null,
+                          customInviteBodyTemplate: preview?.send == true 
+                              ? preview!.body.replaceAll('[invite link]', '{link}')
+                              : null,
                         );
                       }
                       if (mounted) Navigator.pop(context);

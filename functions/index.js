@@ -330,7 +330,8 @@ async function generateMessageContent(db, msg, roster, contractData) {
             : "";
 
         const subjectLineup = "Lineup published for your tennis session";
-        const gridLink = `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/grid`;
+        const baseUrl = msg.base_url || "https://www.adhoc-local.com";
+        const gridLink = `${baseUrl}/#/session/${msg.contract_id}/${dateKey}/grid`;
         const groupBody = `Hi all,\n\nThe lineup for ${dateKey} has been set.\n\nConfirmed: ${confirmedNames}${reserveSection}\n\nView the full grid here: ${gridLink}`;
         const renderedEmails = [{
             uid: "_group_",
@@ -365,12 +366,14 @@ async function generateMessageContent(db, msg, roster, contractData) {
             const spotsPerSession = (contractData.courts_count ?? 1) * 4;
             if (confirmedCount >= spotsPerSession) return { skip: true };
         }
+        const baseUrl = msg.base_url || "https://www.adhoc-local.com";
         linkTemplate = (uid) =>
-            `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
+            `${baseUrl}/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(uid)}`;
     } else if ((msg.type === "availability_request" || msg.type === "availability_reminder") && msg.session_date) {
         const dateKey = formatDateKey(msg.session_date.toDate());
+        const baseUrl = msg.base_url || "https://www.adhoc-local.com";
         linkTemplate = (uid) =>
-            `https://www.adhoc-local.com/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
+            `${baseUrl}/#/availability/${msg.contract_id}/${dateKey}?uid=${encodeURIComponent(uid)}`;
     }
 
     const renderedEmails = recipients.map(r => {
@@ -546,7 +549,8 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
                     if (outPlayers.length > 0) {
                         const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${dateKey}`;
                         await Promise.all(outPlayers.map(r => {
-                            const subLink = `https://www.adhoc-local.com/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const baseUrl = msg.base_url || "https://www.adhoc-local.com";
+                            const subLink = `${baseUrl}/#/session/${msg.contract_id}/${dateKey}/subin?uid=${encodeURIComponent(r.uid)}`;
                             const body = `Hi ${r.display_name || r.uid}, the lineup for ${dateKey} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
                             return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
                         }));
@@ -567,6 +571,7 @@ exports.fireScheduledMessages = onSchedule("every 60 minutes", async () => {
                             body: `Hi {playerName}, we still need ${spotsNeeded} more player${spotsNeeded > 1 ? "s" : ""} for the ${dateKey} session. Claim the spot: {link}`,
                             recipients: roster.map(p => ({ uid: p.uid, display_name: p.display_name })),
                             recipients_filter: "all", auto_send_enabled: true,
+                            base_url: msg.base_url || "https://www.adhoc-local.com",
                         });
                     }
                 }
@@ -821,7 +826,8 @@ exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
                     if (outPlayers.length > 0) {
                         const subjectSub = `Sub needed — ${spotsNeeded} spot${spotsNeeded > 1 ? "s" : ""} open for ${sessionDate}`;
                         await Promise.all(outPlayers.map(r => {
-                            const subLink = `https://www.adhoc-local.com/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
+                            const baseUrl = msg.base_url || "https://www.adhoc-local.com";
+                            const subLink = `${baseUrl}/#/session/${contractId}/${sessionDate}/subin?uid=${encodeURIComponent(r.uid)}`;
                             const body = `Hi ${r.display_name || r.uid}, the lineup for ${sessionDate} has ${spotsNeeded} open spot${spotsNeeded > 1 ? "s" : ""}. Claim it here: ${subLink}`;
                             return sendToUser(db, r.uid, subjectSub, body, organizerEmail);
                         }));
@@ -843,6 +849,7 @@ exports.sendApprovedMessages = onRequest({ cors: true }, async (req, res) => {
                             recipients: roster.map(p => ({ uid: p.uid, display_name: p.display_name })),
                             recipients_filter: "all",
                             auto_send_enabled: contractData.notification_mode !== "manual",
+                            base_url: msg.base_url || "https://www.adhoc-local.com",
                         });
                     }
                 }

@@ -8,6 +8,9 @@ import '../utils/player_sort.dart';
 import 'compose_message_screen.dart';
 import 'general_email_queue_screen.dart';
 import '../services/location_service.dart';
+import 'complete_profile_screen.dart';
+import 'availability_setup_screen.dart';
+import '../utils/link_utils.dart';
 
 class PlayersDirectoryScreen extends StatefulWidget {
   final String currentUserUid;
@@ -251,6 +254,34 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                 creatorUid: widget.currentUserUid,
               ),
             ),
+            if (filteredDocs.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: filteredDocs.every((doc) => _selectedPlayers.contains(doc.id)),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            for (final doc in filteredDocs) {
+                              final user = User.fromFirestore(doc);
+                              _selectedPlayers.add(doc.id);
+                              _selectedPlayerNames[doc.id] = user.displayName.isNotEmpty ? user.displayName : doc.id;
+                            }
+                          } else {
+                            for (final doc in filteredDocs) {
+                              _selectedPlayers.remove(doc.id);
+                              _selectedPlayerNames.remove(doc.id);
+                            }
+                          }
+                        });
+                      },
+                    ),
+                    const Text("Select All Filtered", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                  ],
+                ),
+              ),
             Expanded(
               child: filteredDocs.isEmpty
                   ? const Center(
@@ -370,8 +401,8 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
       renderedEmails.add(RenderedEmail(
         uid: uid,
         displayName: name,
-        subject: "Please Update Your Tennis Availability",
-        body: "Hi $name,\n\nCould you please take a moment to put in some available times during the week when you would like to play? Entering your availability allows others to invite you to games during that time slot. You can then decide if you want to accept or not.\n\nClick the link below to set your availability (no login required):\nhttps://www.adhoc-local.com/#/availability-setup?uid=$uid\n\nThanks!",
+        subject: "Please Update Your Tennis Preferences",
+        body: "Hi $name,\n\nCould you please take a moment to put in your zip code and the available times during the week when you would like to play? Entering your availability and zip code allows us to invite you to matches scheduled close to your location during those time slots.\n\nClick the link below to set your preferences (no login required):\n${LinkUtils.getBaseUrl()}/#/availability-setup?uid=$uid\n\nThanks!",
       ));
     }
 
@@ -380,11 +411,12 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
       organizerId: currentUser.uid,
       type: 'general_availability_request',
       status: 'pending_approval',
-      subject: "Please Update Your Tennis Availability",
+      subject: "Please Update Your Tennis Preferences",
       body: "Hi {name},\n...",
       recipients: _selectedPlayers.map((uid) => RecipientInfo(uid: uid, displayName: _selectedPlayerNames[uid] ?? '')).toList(),
       renderedEmails: renderedEmails,
       generatedAt: DateTime.now(),
+      baseUrl: LinkUtils.getBaseUrl(),
     );
 
     // Show loading dialog
@@ -562,6 +594,39 @@ class _PlayersDirectoryScreenState extends State<PlayersDirectoryScreen> {
                       visualDensity: VisualDensity.compact,
                       onPressed: widget.onEditProfile,
                       tooltip: 'Edit Profile',
+                    ),
+                  if (!isMe && currentUser.isAdmin)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.admin_panel_settings, size: 20, color: Colors.indigo),
+                      tooltip: 'Admin Tools',
+                      padding: EdgeInsets.zero,
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'edit_profile',
+                          child: Text('Edit Profile'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'edit_availability',
+                          child: Text('Edit Availability'),
+                        ),
+                      ],
+                      onSelected: (value) {
+                        if (value == 'edit_profile') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CompleteProfileScreen(playerUid: docId, isAdminMode: true),
+                            ),
+                          );
+                        } else if (value == 'edit_availability') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AvailabilitySetupScreen(playerUid: docId, isAdminMode: true),
+                            ),
+                          );
+                        }
+                      },
                     ),
                 ],
               ),

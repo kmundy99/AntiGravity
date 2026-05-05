@@ -1,5 +1,6 @@
 import '../models.dart';
 import 'package:intl/intl.dart';
+import 'link_utils.dart';
 
 class MessageTemplates {
   static String displayName(MessageType type) => switch (type) {
@@ -289,13 +290,13 @@ class MessageTemplates {
       case MessageType.subRequest:
         if (c.contextId != null) {
           return (uid) =>
-              'https://www.adhoc-local.com/#/match/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
+              '${LinkUtils.getBaseUrl()}/#/match/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.contractInvite:
         if (c.contextId != null) {
           return (uid) =>
-              'https://www.adhoc-local.com/#/contract/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
+              '${LinkUtils.getBaseUrl()}/#/contract/${c.contextId}?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.availabilityRequest:
@@ -305,7 +306,7 @@ class MessageTemplates {
               '${c.sessionDate!.month.toString().padLeft(2, '0')}-'
               '${c.sessionDate!.day.toString().padLeft(2, '0')}';
           return (uid) =>
-              'https://www.adhoc-local.com/#/availability/${c.contextId}/$dateKey?uid=${Uri.encodeComponent(uid)}';
+              '${LinkUtils.getBaseUrl()}/#/availability/${c.contextId}/$dateKey?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.sessionLineup:
@@ -314,7 +315,7 @@ class MessageTemplates {
               '${c.sessionDate!.month.toString().padLeft(2, '0')}-'
               '${c.sessionDate!.day.toString().padLeft(2, '0')}';
           return (uid) =>
-              'https://www.adhoc-local.com/#/session/${c.contextId}/$dateKey/manage?uid=${Uri.encodeComponent(uid)}';
+              '${LinkUtils.getBaseUrl()}/#/session/${c.contextId}/$dateKey/manage?uid=${Uri.encodeComponent(uid)}';
         }
         return null;
       case MessageType.paymentReminder:

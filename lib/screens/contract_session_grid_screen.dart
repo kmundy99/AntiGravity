@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models.dart';
 import '../services/firebase_service.dart';
+import '../utils/feedback_utils.dart';
 import 'compose_message_screen.dart';
 import 'slot_assignment_screen.dart';
 
@@ -479,8 +480,19 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
         title: Text(
           '${contract.clubName.isNotEmpty ? contract.clubName : "Contract"} — Session Grid',
         ),
-        actions: widget.readOnly ? null : [
-          if (_isTeam)
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lightbulb_outline),
+            tooltip: 'Provide Feedback / Report Idea',
+            onPressed: () => showFeedbackModal(
+              context,
+              widget.currentUserUid,
+              null,
+              'Session Grid',
+            ),
+          ),
+          if (!widget.readOnly) ...[
+            if (_isTeam)
             _isRefreshingRatings
                 ? const Padding(
                     padding: EdgeInsets.all(12),
@@ -562,6 +574,7 @@ class _ContractSessionGridScreenState extends State<ContractSessionGridScreen> {
               visualDensity: VisualDensity.compact,
             ),
           ),
+          ],
         ],
       ),
       body: StreamBuilder<List<ContractSession>>(

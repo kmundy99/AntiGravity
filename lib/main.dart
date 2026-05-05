@@ -366,6 +366,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
         await prefs.setString('user_uid', uid);
         await prefs.setString('user_login_contact', email);
+        
+        final trusted = prefs.getStringList('trusted_emails') ?? [];
+        if (!trusted.contains(email)) {
+          trusted.add(email);
+          await prefs.setStringList('trusted_emails', trusted);
+        }
+
         _loadUser();
         
         if (mounted) {
@@ -2301,6 +2308,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           loginId = loginId.toLowerCase();
 
                           final prefs = await SharedPreferences.getInstance();
+
+                          // Fast login bypass for trusted devices
+                          final trusted = prefs.getStringList('trusted_emails') ?? [];
+                          if (trusted.contains(loginId) && FirebaseAuth.instance.currentUser != null) {
+                             String? uid = await _resolveContactToUid(loginId);
+                             if (uid != null) {
+                               await prefs.setString('user_uid', uid);
+                               await prefs.setString('user_login_contact', loginId);
+                               _loadUser();
+                               if (mounted) {
+                                 ScaffoldMessenger.of(context).showSnackBar(
+                                   const SnackBar(content: Text('Welcome back!')),
+                                 );
+                               }
+                               return;
+                             }
+                          }
 
                           // Send Email Link
                           final url = Uri.base.toString().split('?').first; 

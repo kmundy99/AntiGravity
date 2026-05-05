@@ -140,17 +140,25 @@ void showFeedbackModal(
                               }
                             }
 
-                            await FirebaseFirestore.instance
-                                .collection('feedbacks')
-                                .add({
-                                  'userId': userId,
-                                  'displayName': displayName,
-                                  'type': type,
-                                  'description': description,
-                                  'aiResponse': finalAiResponse,
-                                  'screenContext': screenContext,
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                });
+                            try {
+                              await FirebaseFirestore.instance
+                                  .collection('feedbacks')
+                                  .add({
+                                    'userId': userId,
+                                    'displayName': displayName,
+                                    'type': type,
+                                    'description': description,
+                                    'aiResponse': finalAiResponse,
+                                    'screenContext': screenContext,
+                                    'createdAt': FieldValue.serverTimestamp(),
+                                  });
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text("Error submitting feedback: $e")),
+                                );
+                              }
+                            }
 
                             setModalState(() => isSubmitting = false);
 
